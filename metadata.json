@@ -1,0 +1,6 @@
+{
+  "name": "CIMED – Controle em Processo",
+  "description": "Acompanhamento em tempo real das máquinas de produção e envase farmacêutico da CIMED.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
