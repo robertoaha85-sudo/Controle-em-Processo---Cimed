@@ -5,26 +5,33 @@
       "nome": "Norden I",
       "setor": "semissolidos",
       "linhaPadrao": "NORDEN I",
-      "status": "em_andamento",
-      "produtoAtualId": "p-nord1-09",
-      "produtoAtualNome": "CIMECORT CREM BG 30G",
-      "horaInicio": "06:30",
-      "previsaoTermino": "12:45",
-      "tempoEnvaseMinutos": 375,
-      "teveProblemaMecanico": false
+      "status": "livre",
+      "produtoAtualId": null,
+      "produtoAtualNome": null,
+      "horaInicio": null,
+      "previsaoTermino": null,
+      "tempoEnvaseMinutos": null,
+      "teveProblemaMecanico": false,
+      "numeroLote": null,
+      "dataInicio": null,
+      "detalheProblema": null,
+      "ultimaAtualizacao": "2026-09-08T10:29:40.229Z"
     },
     {
       "id": "m-semi-norden-2",
       "nome": "Norden II",
       "setor": "semissolidos",
       "linhaPadrao": "NORDEN II",
-      "status": "em_andamento",
-      "produtoAtualId": "p-nord2-01",
-      "produtoAtualNome": "BEPANTRIZ 50MG/G POM BG 30G",
-      "horaInicio": "07:00",
-      "previsaoTermino": "14:16",
-      "tempoEnvaseMinutos": 436,
-      "teveProblemaMecanico": false
+      "status": "livre",
+      "produtoAtualId": null,
+      "produtoAtualNome": null,
+      "horaInicio": null,
+      "previsaoTermino": null,
+      "tempoEnvaseMinutos": null,
+      "teveProblemaMecanico": false,
+      "numeroLote": null,
+      "dataInicio": null,
+      "detalheProblema": null
     },
     {
       "id": "m-semi-norden-3",
@@ -260,5 +267,71 @@
       "tempoEnvaseMinutos": 436
     }
   ],
-  "historico": []
+  "historico": [],
+  "equipes": [
+    {
+      "id": "eq-sem-1-1",
+      "setor": "semissolidos",
+      "turno": "1º turno",
+      "cargo": "Coordenador da área",
+      "nome": "(a definir)",
+      "email": "(a definir)"
+    },
+    {
+      "id": "eq-sem-1-2",
+      "setor": "semissolidos",
+      "turno": "1º turno",
+      "cargo": "Supervisor",
+      "nome": "Anisio Vitor Barbosa Santos",
+      "email": "anisio.silva@grupocimed.com.br"
+    },
+    {
+      "id": "eq-sem-2-1",
+      "setor": "semissolidos",
+      "turno": "2º turno",
+      "cargo": "Supervisora",
+      "nome": "Vitória Renata da Silva",
+      "email": "vitória.renata@grupocimed.com.br"
+    },
+    {
+      "id": "eq-sem-3-1",
+      "setor": "semissolidos",
+      "turno": "3º turno",
+      "cargo": "Supervisor",
+      "nome": "Lucas da Silva Mariano",
+      "email": "lucas.mariano@grupocimed.com.br"
+    },
+    {
+      "id": "eq-liq-geral",
+      "setor": "liquidos",
+      "turno": "Geral",
+      "cargo": "Coordenador da área",
+      "nome": "Thales do Vale Silva",
+      "email": "thales.silva@grupocimed.com.br"
+    },
+    {
+      "id": "eq-liq-1-1",
+      "setor": "liquidos",
+      "turno": "1º turno",
+      "cargo": "Supervisor",
+      "nome": "Emerson Beletato Pereira",
+      "email": "emerson.pereira@grupocimed.com.br"
+    },
+    {
+      "id": "eq-liq-2-1",
+      "setor": "liquidos",
+      "turno": "2º turno",
+      "cargo": "Supervisora",
+      "nome": "Greice Mara Pereira de Pádua",
+      "email": "greice.padua@grupocimed.com.br"
+    },
+    {
+      "id": "eq-liq-3-1",
+      "setor": "liquidos",
+      "turno": "3º turno",
+      "cargo": "Supervisor",
+      "nome": "(a definir)",
+      "email": "(a definir)"
+    }
+  ]
 }

@@ -94,10 +94,14 @@ async function startServer() {
 
   // SSE (Server-Sent Events) para sincronização multiusuário instantânea
   app.get('/api/events', (req: Request, res: Response) => {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
     res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders?.();
+
+    // Comentário inicial para estabelecer a conexão imediatamente através do proxy
+    res.write(': keepalive\n\n');
 
     const clientId = nextClientId++;
     sseClients.push({ id: clientId, res });
@@ -110,14 +114,19 @@ async function startServer() {
     });
   });
 
-  // Heartbeat para manter SSE ativo em proxies
+  // Heartbeat frequente para manter SSE ativo através de proxies e Cloud Run
   setInterval(() => {
     sseClients.forEach((client) => {
       try {
         client.res.write(`: heartbeat\n\n`);
       } catch {}
     });
-  }, 25000);
+  }, 12000);
+
+  // Endpoint de integridade
+  app.get('/api/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', time: new Date().toISOString() });
+  });
 
   // Retorna todos os dados
   app.get('/api/data', (req: Request, res: Response) => {

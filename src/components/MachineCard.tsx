@@ -291,24 +291,34 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
       {/* Botões de Ação no Rodapé do Card */}
       <div className="pt-2 border-t border-white/10 mt-2 space-y-1.5">
         {confirmandoFinalizar ? (
-          <div className="bg-black/50 p-1.5 rounded border border-white/10 flex items-center justify-between gap-1">
-            <span className="text-[10px] text-white/90 font-bold uppercase">Confirmar finalização?</span>
-            <div className="flex items-center gap-1">
+          <div className="bg-emerald-950/80 p-2 rounded border border-emerald-500/50 flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-[10px]">
+              <span className="text-emerald-300 font-bold uppercase tracking-wider flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                Finalizar lote atual?
+              </span>
+              {maquina.numeroLote && (
+                <span className="text-white/70 font-mono text-[9px] bg-black/40 px-1 rounded">
+                  Lt: {maquina.numeroLote}
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
               <button
                 id={`btn-confirmar-finalizar-${maquina.id}`}
                 onClick={async () => {
                   await finalizarLote(maquina.id);
                   setConfirmandoFinalizar(false);
                 }}
-                className="text-[9px] bg-emerald-600 hover:bg-emerald-500 text-white font-black px-2.5 py-1 rounded uppercase tracking-wider cursor-pointer"
+                className="flex-1 text-[10px] bg-emerald-600 hover:bg-emerald-500 text-white font-black py-1.5 px-2 rounded uppercase tracking-wider cursor-pointer shadow flex items-center justify-center gap-1 transition-colors"
               >
-                Sim
+                <span>Confirmar e Liberar</span>
               </button>
               <button
                 onClick={() => setConfirmandoFinalizar(false)}
-                className="text-[9px] bg-white/10 hover:bg-white/20 text-white/70 px-2 py-1 rounded uppercase tracking-wider cursor-pointer"
+                className="text-[10px] bg-white/10 hover:bg-white/20 text-white/80 py-1.5 px-2.5 rounded uppercase tracking-wider cursor-pointer transition-colors"
               >
-                Não
+                Cancelar
               </button>
             </div>
           </div>
@@ -353,13 +363,24 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
               {/* 3. Finalizar lote */}
               <button
                 id={`btn-finalizar-lote-${maquina.id}`}
-                onClick={() => setConfirmandoFinalizar(true)}
-                className={`text-[10px] font-bold py-1.5 px-1 rounded uppercase tracking-wider transition-colors flex items-center justify-center gap-1 cursor-pointer ${
-                  estaAtrasado
-                    ? 'bg-orange-500 hover:bg-orange-400 text-black font-black shadow'
-                    : 'bg-white/5 border border-white/10 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white text-white/80'
+                onClick={() => {
+                  if (temLoteAtivo || maquina.produtoAtualNome) {
+                    setConfirmandoFinalizar(true);
+                  }
+                }}
+                disabled={!temLoteAtivo && !maquina.produtoAtualNome}
+                className={`text-[10px] font-bold py-1.5 px-1 rounded uppercase tracking-wider transition-colors flex items-center justify-center gap-1 ${
+                  !temLoteAtivo && !maquina.produtoAtualNome
+                    ? 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
+                    : estaAtrasado
+                    ? 'bg-orange-500 hover:bg-orange-400 text-black font-black shadow cursor-pointer'
+                    : 'bg-emerald-600/20 border border-emerald-500/40 hover:bg-emerald-600 hover:text-white text-emerald-300 cursor-pointer'
                 }`}
-                title="Finalizar lote e registrar no histórico"
+                title={
+                  !temLoteAtivo && !maquina.produtoAtualNome
+                    ? 'Máquina livre — nenhum lote em andamento para finalizar'
+                    : 'Finalizar lote atual e registrar no histórico'
+                }
               >
                 <CheckCircle2 className="w-3 h-3" />
                 <span className="truncate">Finalizar lote</span>

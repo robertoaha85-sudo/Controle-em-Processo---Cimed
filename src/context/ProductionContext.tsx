@@ -63,16 +63,20 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     return () => clearInterval(timer);
   }, []);
 
-  // Carga inicial e conexão SSE em tempo real
+  // Carga inicial e conexão SSE em tempo real com fallback resiliente de polling
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimeout: any = null;
+    let pollingInterval: any = null;
+    let cancelado = false;
 
     const carregarDadosIniciais = async () => {
       try {
         const res = await fetch('/api/data');
         if (res.ok) {
           const data = await res.json();
+          if (cancelado) return;
+          setConectado(true);
           if (data.maquinas) setMaquinas(data.maquinas);
           if (data.produtos) setProdutos(data.produtos);
           if (data.historico) setHistorico(data.historico);
@@ -83,17 +87,39 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       }
     };
 
+    const verificarConexao = async () => {
+      try {
+        const res = await fetch('/api/data');
+        if (res.ok && !cancelado) {
+          setConectado(true);
+          const data = await res.json();
+          if (data.maquinas) setMaquinas(data.maquinas);
+          if (data.produtos) setProdutos(data.produtos);
+          if (data.historico) setHistorico(data.historico);
+          if (data.equipes) setEquipes(data.equipes);
+        }
+      } catch {
+        if (!cancelado) setConectado(false);
+      }
+    };
+
     const conectarSSE = () => {
       try {
+        if (eventSource) {
+          eventSource.close();
+        }
+
         eventSource = new EventSource('/api/events');
 
         eventSource.onopen = () => {
-          setConectado(true);
+          if (!cancelado) setConectado(true);
         };
 
         eventSource.onmessage = (event) => {
+          if (cancelado) return;
           try {
             const data = JSON.parse(event.data);
+            setConectado(true);
             if (data.type === 'sync_all') {
               if (data.payload.maquinas) setMaquinas(data.payload.maquinas);
               if (data.payload.produtos) setProdutos(data.payload.produtos);
@@ -115,13 +141,15 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         };
 
         eventSource.onerror = () => {
-          setConectado(false);
-          eventSource?.close();
-          // Tenta reconectar em 3 segundos
-          reconnectTimeout = setTimeout(conectarSSE, 3000);
+          // Se o navegador perdeu a conexão SSE, verifica via HTTP imediatamente
+          verificarConexao();
+          if (eventSource && eventSource.readyState === EventSource.CLOSED) {
+            eventSource.close();
+            reconnectTimeout = setTimeout(conectarSSE, 5000);
+          }
         };
       } catch (err) {
-        setConectado(false);
+        verificarConexao();
         reconnectTimeout = setTimeout(conectarSSE, 5000);
       }
     };
@@ -129,9 +157,14 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     carregarDadosIniciais();
     conectarSSE();
 
+    // Polling de segurança periódico (a cada 6s) para garantir sincronização mesmo atrás de proxies restritivos
+    pollingInterval = setInterval(verificarConexao, 6000);
+
     return () => {
+      cancelado = true;
       if (eventSource) eventSource.close();
       if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (pollingInterval) clearInterval(pollingInterval);
     };
   }, []);
 
@@ -443,11 +476,65 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     } catch (err) {}
   };
 
-  // Finalizar lote
+  // Finalizar lote com atualização otimista instantânea
   const finalizarLote = async (maquinaId: string, observacao?: string) => {
     const agora = new Date();
     const horaTermino = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
+    const dataStr = agora.toISOString().split('T')[0];
 
+    const maquinaAlvo = maquinas.find((m) => m.id === maquinaId);
+    if (!maquinaAlvo) return;
+
+    // Se já estiver livre e sem produto, não faz nada
+    if (maquinaAlvo.status === 'livre' && !maquinaAlvo.produtoAtualNome) return;
+
+    const loteLocalId = `lote-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const historicoOtimista: LoteHistorico = {
+      id: loteLocalId,
+      maquinaId: maquinaAlvo.id,
+      maquinaNome: maquinaAlvo.nome,
+      setor: maquinaAlvo.setor,
+      produtoNome: maquinaAlvo.produtoAtualNome || 'Produto Finalizado',
+      numeroLote: maquinaAlvo.numeroLote || '',
+      dataInicio: maquinaAlvo.dataInicio || dataStr,
+      horaInicio: maquinaAlvo.horaInicio || horaTermino,
+      horaTermino,
+      duracaoMinutos: maquinaAlvo.tempoEnvaseMinutos || 0,
+      teveProblemaMecanico: Boolean(maquinaAlvo.teveProblemaMecanico || maquinaAlvo.status === 'problema_mecanico'),
+      dataFinalizacao: dataStr,
+      observacao: observacao || '',
+    };
+
+    // 1. Atualização Otimista Imediata: Libera a máquina na hora na interface
+    setMaquinas((prev) =>
+      prev.map((m) =>
+        m.id === maquinaId
+          ? {
+              ...m,
+              status: 'livre',
+              produtoAtualId: null,
+              produtoAtualNome: null,
+              numeroLote: null,
+              dataInicio: null,
+              horaInicio: null,
+              previsaoTermino: null,
+              tempoEnvaseMinutos: null,
+              teveProblemaMecanico: false,
+              detalheProblema: null,
+              ultimaAtualizacao: agora.toISOString(),
+            }
+          : m
+      )
+    );
+
+    // 2. Adiciona imediatamente ao histórico se tinha produto
+    if (maquinaAlvo.produtoAtualNome) {
+      setHistorico((prev) => [historicoOtimista, ...prev]);
+    }
+
+    tocarSomSucesso();
+
+    // 3. Envia para o backend para persistência
     try {
       const res = await fetch(`/api/maquinas/${maquinaId}/finalizar`, {
         method: 'POST',
@@ -455,13 +542,16 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         body: JSON.stringify({ horaTermino, observacao }),
       });
       if (res.ok) {
+        setConectado(true);
         const data = await res.json();
+        // Sincroniza com retorno oficial do servidor
         setMaquinas((prev) => prev.map((m) => (m.id === maquinaId ? data.maquina : m)));
-        setHistorico((prev) => [data.lote, ...prev]);
-        tocarSomSucesso();
+        if (data.lote) {
+          setHistorico((prev) => [data.lote, ...prev.filter((h) => h.id !== loteLocalId)]);
+        }
       }
     } catch (err) {
-      console.error('Erro ao finalizar lote:', err);
+      console.warn('Finalização salva no cliente, aguardando conexão:', err);
     }
   };
 
