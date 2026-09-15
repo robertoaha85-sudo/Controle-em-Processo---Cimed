@@ -9,12 +9,20 @@ export type StatusMaquina =
   | 'em_limpeza_parcial'
   | 'aguardando_manipulacao';
 
+export interface VinculoMaquinaTempo {
+  linhaOuMaquina: string; // Ex: "Xarope", "CAM", "Gotas", "Externo", "Epativan", "Norden I", etc.
+  tempoEnvaseMinutos: number; // Minutos totais
+}
+
 export interface Produto {
   id: string;
+  codigo: string; // Código do produto, ex: "100000"
   nome: string;
   setor: Setor;
-  linha: string; // Ex: "NORDEN I", "NORDEN II", "NORDEN III", "NORDEN IV", "CAM", "Gotas", etc.
-  tempoEnvaseMinutos: number; // Armazenado em minutos totais
+  linha: string; // Ex: "Xarope", "CAM", "Gotas", "Externo", "Epativan", "NORDEN I", etc.
+  tempoEnvaseMinutos: number; // Tempo padrão (em minutos)
+  vinculos?: VinculoMaquinaTempo[]; // Máquinas às quais o produto está vinculado com seus tempos específicos
+  temposPorMaquina?: Record<string, number>; // Mapeamento rápido: { [maquinaNomeOuLinha]: minutos }
 }
 
 export interface MembroEquipe {
@@ -33,6 +41,7 @@ export interface Maquina {
   linhaPadrao?: string; // Linha associada para filtrar produtos recomendados
   status: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'em_limpeza_parcial' | 'aguardando_manipulacao';
   produtoAtualId?: string | null;
+  produtoAtualCodigo?: string | null;
   produtoAtualNome?: string | null;
   numeroLote?: string | null;
   dataInicio?: string | null; // Formato YYYY-MM-DD
@@ -49,6 +58,7 @@ export interface LoteHistorico {
   maquinaId: string;
   maquinaNome: string;
   setor: Setor;
+  produtoCodigo?: string | null;
   produtoNome: string;
   numeroLote?: string;
   dataInicio?: string;

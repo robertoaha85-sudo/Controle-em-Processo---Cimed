@@ -35,12 +35,23 @@ function carregarDados(): StoreData {
     if (fs.existsSync(DATA_FILE)) {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
-      return {
+
+      // Garante que o catálogo contenha os produtos com código e vínculos por máquina atualizados (Líquidos e Semissólidos)
+      const temSemissolidosAtualizados =
+        Array.isArray(parsed.produtos) &&
+        parsed.produtos.some((p: any) => p.codigo === '100003' && p.setor === 'semissolidos');
+
+      const data: StoreData = {
         maquinas: parsed.maquinas || MAQUINAS_INICIAIS,
-        produtos: parsed.produtos || PRODUTOS_INICIAIS,
+        produtos: temSemissolidosAtualizados ? parsed.produtos : PRODUTOS_INICIAIS,
         historico: parsed.historico || [],
         equipes: parsed.equipes || EQUIPES_INICIAIS,
       };
+
+      if (!temSemissolidosAtualizados) {
+        salvarDados(data);
+      }
+      return data;
     }
   } catch (err) {
     console.error('Erro ao ler store.json, usando padrão:', err);
@@ -175,6 +186,7 @@ async function startServer() {
       maquinaId: maquina.id,
       maquinaNome: maquina.nome,
       setor: maquina.setor,
+      produtoCodigo: maquina.produtoAtualCodigo || null,
       produtoNome: maquina.produtoAtualNome || 'Produto não especificado',
       numeroLote: maquina.numeroLote || '',
       dataInicio: maquina.dataInicio || dataStr,
@@ -193,6 +205,7 @@ async function startServer() {
       ...maquina,
       status: 'livre',
       produtoAtualId: null,
+      produtoAtualCodigo: null,
       produtoAtualNome: null,
       numeroLote: null,
       dataInicio: null,
@@ -215,17 +228,20 @@ async function startServer() {
 
   // Produtos: Criar novo
   app.post('/api/produtos', (req: Request, res: Response) => {
-    const { nome, setor, linha, tempoEnvaseMinutos } = req.body;
+    const { codigo, nome, setor, linha, tempoEnvaseMinutos, vinculos, temposPorMaquina } = req.body;
     if (!nome || !setor || !linha || tempoEnvaseMinutos === undefined) {
       return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
     }
 
     const novoProduto: Produto = {
       id: `prod-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      codigo: codigo ? String(codigo).trim() : `P${Date.now().toString().slice(-6)}`,
       nome: String(nome).trim().toUpperCase(),
       setor,
       linha: String(linha).trim(),
       tempoEnvaseMinutos: Number(tempoEnvaseMinutos),
+      vinculos: vinculos || [],
+      temposPorMaquina: temposPorMaquina || {},
     };
 
     store.produtos.push(novoProduto);
@@ -237,7 +253,7 @@ async function startServer() {
   // Produtos: Atualizar
   app.put('/api/produtos/:id', (req: Request, res: Response) => {
     const { id } = req.params;
-    const { nome, setor, linha, tempoEnvaseMinutos } = req.body;
+    const { codigo, nome, setor, linha, tempoEnvaseMinutos, vinculos, temposPorMaquina } = req.body;
     const index = store.produtos.findIndex((p) => p.id === id);
 
     if (index === -1) {
@@ -246,10 +262,13 @@ async function startServer() {
 
     store.produtos[index] = {
       ...store.produtos[index],
+      ...(codigo ? { codigo: String(codigo).trim() } : {}),
       ...(nome ? { nome: String(nome).trim().toUpperCase() } : {}),
       ...(setor ? { setor } : {}),
       ...(linha ? { linha: String(linha).trim() } : {}),
       ...(tempoEnvaseMinutos !== undefined ? { tempoEnvaseMinutos: Number(tempoEnvaseMinutos) } : {}),
+      ...(vinculos !== undefined ? { vinculos } : {}),
+      ...(temposPorMaquina !== undefined ? { temposPorMaquina } : {}),
     };
 
     salvarDados(store);

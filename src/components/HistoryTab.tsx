@@ -44,6 +44,7 @@ export const HistoryTab: React.FC = () => {
           const b = busca.toLowerCase();
           return (
             (lote.numeroLote && lote.numeroLote.toLowerCase().includes(b)) ||
+            (lote.produtoCodigo && lote.produtoCodigo.toLowerCase().includes(b)) ||
             lote.produtoNome.toLowerCase().includes(b) ||
             lote.maquinaNome.toLowerCase().includes(b)
           );
@@ -60,12 +61,13 @@ export const HistoryTab: React.FC = () => {
   const exportarCSV = () => {
     if (historicoFiltrado.length === 0) return;
 
-    const cabecalho = ['ID', 'Data Finalização', 'Máquina', 'Setor', 'Produto', 'Lote', 'Data Início', 'Hora Início', 'Término Real', 'Duração', 'Problema Mecânico', 'Observação'];
+    const cabecalho = ['ID', 'Data Finalização', 'Máquina', 'Setor', 'Código', 'Produto', 'Lote', 'Data Início', 'Hora Início', 'Término Real', 'Duração', 'Problema Mecânico', 'Observação'];
     const linhas = historicoFiltrado.map((lote) => [
       lote.id,
       lote.dataFinalizacao,
       `"${lote.maquinaNome}"`,
       lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos',
+      `"${lote.produtoCodigo || ''}"`,
       `"${lote.produtoNome.replace(/"/g, '""')}"`,
       `"${lote.numeroLote || ''}"`,
       lote.dataInicio || lote.dataFinalizacao,
@@ -259,12 +261,19 @@ export const HistoryTab: React.FC = () => {
                         </span>
                       </td>
                       <td className="py-2.5 px-4 font-semibold text-white/80">
-                        {lote.numeroLote && (
-                          <span className="block text-[10px] text-[#FFD100] font-mono uppercase tracking-wider mb-0.5">
-                            LOTE {lote.numeroLote}
-                          </span>
-                        )}
-                        {lote.produtoNome}
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          {lote.numeroLote && (
+                            <span className="text-[10px] text-[#FFD100] font-mono font-bold uppercase tracking-wider bg-[#FFD100]/10 px-1.5 py-0.5 rounded border border-[#FFD100]/30">
+                              LOTE {lote.numeroLote}
+                            </span>
+                          )}
+                          {lote.produtoCodigo && (
+                            <span className="text-[10px] text-white/50 font-mono">
+                              CÓD {lote.produtoCodigo}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-white font-medium">{lote.produtoNome}</div>
                       </td>
                       <td className="py-2.5 px-3 font-mono text-center text-xs text-white/60">
                         {lote.horaInicio}
@@ -326,13 +335,22 @@ export const HistoryTab: React.FC = () => {
                   </button>
                 </div>
 
-                <div className="font-bold text-xs text-white/90 leading-tight">
-                  {lote.numeroLote && (
-                    <span className="inline-block text-[9px] text-black bg-[#FFD100] px-1.5 py-0.5 rounded font-mono uppercase tracking-wider mr-2 align-middle">
-                      LOTE {lote.numeroLote}
-                    </span>
-                  )}
-                  <span className="text-[#FFD100] align-middle">{lote.produtoNome}</span>
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {lote.numeroLote && (
+                      <span className="text-[9px] text-black bg-[#FFD100] px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
+                        LOTE {lote.numeroLote}
+                      </span>
+                    )}
+                    {lote.produtoCodigo && (
+                      <span className="text-[9px] text-white/50 font-mono bg-white/10 px-1.5 py-0.5 rounded border border-white/10">
+                        CÓD {lote.produtoCodigo}
+                      </span>
+                    )}
+                  </div>
+                  <div className="font-bold text-xs text-white leading-tight">
+                    {lote.produtoNome}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 bg-black/60 p-2 rounded text-center font-mono text-xs border border-white/5">

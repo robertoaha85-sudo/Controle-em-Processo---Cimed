@@ -50,10 +50,21 @@ export const ProductsTab: React.FC = () => {
   const produtosFiltrados = useMemo(() => {
     return produtos.filter((p) => {
       if (setorFiltro !== 'todos' && p.setor !== setorFiltro) return false;
-      if (linhaFiltro !== 'todas' && p.linha !== linhaFiltro) return false;
+      if (linhaFiltro !== 'todas') {
+        const lf = linhaFiltro.toLowerCase();
+        const coincideLinha = p.linha.toLowerCase().includes(lf);
+        const coincideVinculo = p.vinculos?.some((v) => v.linhaOuMaquina.toLowerCase().includes(lf));
+        if (!coincideLinha && !coincideVinculo) return false;
+      }
       if (busca.trim()) {
         const b = busca.toLowerCase();
-        return p.nome.toLowerCase().includes(b) || p.linha.toLowerCase().includes(b);
+        const coincideVinculo = p.vinculos?.some((v) => v.linhaOuMaquina.toLowerCase().includes(b));
+        return (
+          (p.codigo ? p.codigo.toLowerCase().includes(b) : false) ||
+          p.nome.toLowerCase().includes(b) ||
+          p.linha.toLowerCase().includes(b) ||
+          coincideVinculo
+        );
       }
       return true;
     });
@@ -272,12 +283,28 @@ export const ProductsTab: React.FC = () => {
                   {listaProdutos.map((p) => (
                     <tr key={p.id} className="hover:bg-white/5 transition-colors">
                       <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          {p.codigo && (
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-[#FFD100] border border-white/10">
+                              CÓD {p.codigo}
+                            </span>
+                          )}
+                          <span className="text-[10px] text-white/50 font-mono">
+                            {p.linha}
+                          </span>
+                        </div>
                         <div className="font-semibold text-white text-xs">
                           {p.nome}
                         </div>
-                        <div className="text-[10px] text-white/40 font-mono">
-                          {p.linha}
-                        </div>
+                        {p.vinculos && p.vinculos.length > 0 && (
+                          <div className="text-[10px] text-white/60 mt-1.5 flex flex-wrap gap-1.5 font-mono">
+                            {p.vinculos.map((v, vIdx) => (
+                              <span key={vIdx} className="bg-white/10 px-1.5 py-0.5 rounded border border-white/10 text-white/80">
+                                <strong className="text-[#FFD100]">{v.linhaOuMaquina}:</strong> {formatarMinutosParaTexto(v.tempoEnvaseMinutos)}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-center">
                         <span className="inline-flex items-center gap-1 font-mono font-bold text-xs text-[#FFD100] bg-[#FFD100]/10 px-2 py-0.5 rounded border border-[#FFD100]/20">

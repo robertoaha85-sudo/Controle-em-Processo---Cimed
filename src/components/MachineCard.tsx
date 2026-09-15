@@ -202,15 +202,22 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
         {/* Informações do Lote em Andamento ou Alerta */}
         {(statusEfetivo === 'em_andamento' || estaAtrasado || (temProblema && maquina.produtoAtualNome)) && (
           <div>
-            <div className="flex items-center justify-between mb-0.5">
+            <div className="flex items-center justify-between mb-0.5 flex-wrap gap-1">
               <div className="text-[10px] text-white/40 uppercase font-semibold tracking-wider">
                 PRODUTO:
               </div>
-              {maquina.numeroLote && (
-                <div className="text-[9px] text-[#FFD100] border border-[#FFD100]/30 bg-[#FFD100]/10 px-1.5 py-0.5 rounded font-mono uppercase tracking-wider">
-                  LOTE {maquina.numeroLote}
-                </div>
-              )}
+              <div className="flex items-center gap-1.5">
+                {maquina.produtoAtualCodigo && (
+                  <span className="text-[9px] text-white/60 bg-white/10 px-1 py-0.5 rounded font-mono font-bold">
+                    CÓD {maquina.produtoAtualCodigo}
+                  </span>
+                )}
+                {maquina.numeroLote && (
+                  <div className="text-[9px] text-[#FFD100] border border-[#FFD100]/30 bg-[#FFD100]/10 px-1.5 py-0.5 rounded font-mono uppercase tracking-wider font-bold">
+                    LOTE {maquina.numeroLote}
+                  </div>
+                )}
+              </div>
             </div>
             <div className="text-xs font-bold text-white mb-2 truncate" title={maquina.produtoAtualNome || ''}>
               {maquina.produtoAtualNome || '—'}

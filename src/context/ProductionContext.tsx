@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, MembroEquipe } from '../types';
-import { calcularPrevisaoTermino, PRODUTOS_INICIAIS, MAQUINAS_INICIAIS, EQUIPES_INICIAIS } from '../initialData';
+import { calcularPrevisaoTermino, obterTempoProdutoParaMaquina, PRODUTOS_INICIAIS, MAQUINAS_INICIAIS, EQUIPES_INICIAIS } from '../initialData';
 import { tocarAlarmeProblemaMecanico, tocarSomSucesso, isSoundEnabled, setSoundEnabled } from '../utils/audio';
 
 interface ProductionContextType {
@@ -20,7 +20,14 @@ interface ProductionContextType {
     estaAtrasado: boolean;
     atrasoMinutos: number;
   };
-  iniciarLote: (maquinaId: string, produtoId: string, dataInicio: string, horaInicio: string, numeroLote: string) => Promise<void>;
+  iniciarLote: (
+    maquinaId: string,
+    produtoId: string,
+    dataInicio: string,
+    horaInicio: string,
+    numeroLote: string,
+    tempoMinutosCustomizado?: number
+  ) => Promise<void>;
   marcarProblemaMecanico: (maquinaId: string, detalhe?: string) => Promise<void>;
   resolverProblemaMecanico: (maquinaId: string) => Promise<void>;
   alterarStatusMaquina: (
@@ -329,21 +336,35 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   }, [maquinas, obterStatusEfetivo]);
 
   // Iniciar lote em uma máquina
-  const iniciarLote = async (maquinaId: string, produtoId: string, dataInicio: string, horaInicio: string, numeroLote: string) => {
+  const iniciarLote = async (
+    maquinaId: string,
+    produtoId: string,
+    dataInicio: string,
+    horaInicio: string,
+    numeroLote: string,
+    tempoMinutosCustomizado?: number
+  ) => {
+    const maquina = maquinas.find((m) => m.id === maquinaId);
     const produto = produtos.find((p) => p.id === produtoId);
-    if (!produto) return;
+    if (!produto || !maquina) return;
 
-    const previsaoTermino = calcularPrevisaoTermino(horaInicio, produto.tempoEnvaseMinutos);
+    const tempoMinutos =
+      tempoMinutosCustomizado !== undefined && tempoMinutosCustomizado > 0
+        ? tempoMinutosCustomizado
+        : obterTempoProdutoParaMaquina(produto, maquina);
+
+    const previsaoTermino = calcularPrevisaoTermino(horaInicio, tempoMinutos);
 
     const payload = {
-      status: 'em_andamento',
+      status: 'em_andamento' as const,
       produtoAtualId: produto.id,
+      produtoAtualCodigo: produto.codigo || null,
       produtoAtualNome: produto.nome,
       dataInicio,
       horaInicio,
       numeroLote,
       previsaoTermino,
-      tempoEnvaseMinutos: produto.tempoEnvaseMinutos,
+      tempoEnvaseMinutos: tempoMinutos,
       teveProblemaMecanico: false,
       detalheProblema: null,
     };
@@ -494,6 +515,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       maquinaId: maquinaAlvo.id,
       maquinaNome: maquinaAlvo.nome,
       setor: maquinaAlvo.setor,
+      produtoCodigo: maquinaAlvo.produtoAtualCodigo || null,
       produtoNome: maquinaAlvo.produtoAtualNome || 'Produto Finalizado',
       numeroLote: maquinaAlvo.numeroLote || '',
       dataInicio: maquinaAlvo.dataInicio || dataStr,
@@ -513,6 +535,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
               ...m,
               status: 'livre',
               produtoAtualId: null,
+              produtoAtualCodigo: null,
               produtoAtualNome: null,
               numeroLote: null,
               dataInicio: null,
