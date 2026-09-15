@@ -41,9 +41,6 @@ export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
               <div>
                 <h1 className="text-base sm:text-lg font-medium tracking-wide uppercase text-white/90 flex items-center gap-2">
                   <span>Controle em Processo</span>
-                  <span className="hidden lg:inline-block text-[10px] bg-white/10 text-white/70 px-2 py-0.5 rounded font-mono uppercase tracking-wider border border-white/10">
-                    Chão de Fábrica
-                  </span>
                 </h1>
                 <p className="text-[11px] text-white/40 hidden sm:block tracking-wide">
                   Acompanhamento em tempo real das máquinas de envase

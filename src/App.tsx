@@ -22,16 +22,16 @@ export default function App() {
           {abaAtiva === 'historico' && <HistoryTab />}
         </main>
 
-        {/* Rodapé Desktop - Estilo Technical Dashboard */}
-        <footer className="hidden md:flex bg-[#FFD100] text-black px-6 py-2.5 items-center justify-between mt-auto shadow-md">
-          <div className="flex items-center gap-8 text-[11px] font-bold uppercase tracking-tight">
+        {/* Rodapé - Estilo Technical Dashboard */}
+        <footer className="bg-[#FFD100] text-black px-4 sm:px-6 py-2.5 flex flex-col sm:flex-row items-center justify-between mt-auto shadow-md gap-2 pb-20 md:pb-2.5">
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-4 sm:gap-6 text-[11px] font-bold uppercase tracking-tight">
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 bg-black rounded-full"></span>
-              <span>CIMED • Unidade Pouso Alegre</span>
+              <span>CIMED UNIDADE 01</span>
             </div>
             <div className="flex items-center gap-2">
               <span className="w-2 h-2 bg-black rounded-full"></span>
-              <span>Controle em Processo • Farmacêutica</span>
+              <span>Criador: Roberto Coelho Dos Santos Junior</span>
             </div>
           </div>
           <div className="flex items-center gap-5 text-[10px] font-bold uppercase tracking-wider">
