@@ -1,0 +1,30 @@
+{
+  "entities": {
+    "LoteBloqueio": {
+      "title": "LoteBloqueio",
+      "description": "Lotes de bloqueio vendidos mas ainda não produzidos com prioridade máxima",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "produto": { "type": "string" },
+        "codigoProduto": { "type": "string" },
+        "numeroLote": { "type": "string" },
+        "maquina": { "type": "string" },
+        "setor": { "type": "string" },
+        "prazo": { "type": "string", "enum": ["hoje", "semana", "mes"] },
+        "dataLimite": { "type": "string" },
+        "status": { "type": "string", "enum": ["pendente", "em_andamento", "concluido", "cancelado"] },
+        "observacoes": { "type": "string" },
+        "criadoEm": { "type": "string" },
+        "concluidoEm": { "type": "string" }
+      },
+      "required": ["produto", "numeroLote", "maquina", "prazo", "status"]
+    }
+  },
+  "firestore": {
+    "/lotesBloqueio/{id}": {
+      "schema": "LoteBloqueio",
+      "description": "Coleção de lotes de bloqueio de alta prioridade"
+    }
+  }
+}

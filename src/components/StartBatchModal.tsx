@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { X, Play, Search, Clock, Check, AlertCircle, Hash, Layers, CheckCircle2 } from 'lucide-react';
-import { Maquina, Produto } from '../types';
+import { X, Play, Search, Clock, Check, AlertCircle, Hash, Layers, CheckCircle2, ShieldAlert } from 'lucide-react';
+import { Maquina, Produto, LoteBloqueio } from '../types';
 import { useProduction } from '../context/ProductionContext';
 import {
   formatarMinutosParaTexto,
@@ -15,7 +15,7 @@ interface StartBatchModalProps {
 }
 
 export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFechar }) => {
-  const { produtos, iniciarLote, horaAtual } = useProduction();
+  const { produtos, iniciarLote, horaAtual, lotesBloqueio, verificarLoteBloqueio } = useProduction();
 
   const [busca, setBusca] = useState('');
   const [produtoSelecionadoId, setProdutoSelecionadoId] = useState<string>('');
@@ -29,6 +29,8 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
   const [dataInicio, setDataInicio] = useState(dataPadraoStr);
   const [horaInicio, setHoraInicio] = useState(horaPadraoStr);
   const [numeroLote, setNumeroLote] = useState('');
+  const [forcarBloqueio, setForcarBloqueio] = useState(false);
+  const [bloqueioIdSelecionado, setBloqueioIdSelecionado] = useState<string | null>(null);
   const [salvando, setSalvando] = useState(false);
 
   const inputBuscaRef = useRef<HTMLInputElement>(null);
@@ -41,6 +43,21 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
     }, 100);
     return () => clearTimeout(timer);
   }, []);
+
+  // Lotes de bloqueio pendentes compatíveis com esta máquina ou setor
+  const bloqueiosCompativeis = useMemo(() => {
+    if (!maquina) return [];
+    const maqNomeNorm = maquina.nome.toLowerCase().trim();
+    return lotesBloqueio.filter((b) => {
+      if (b.status === 'concluido' || b.status === 'cancelado') return false;
+      if (b.status === 'em_andamento') return false;
+      if (b.maquina && b.maquina.toLowerCase() !== 'todas') {
+        const bMaq = b.maquina.toLowerCase().trim();
+        return bMaq === maqNomeNorm || maqNomeNorm.includes(bMaq) || bMaq.includes(maqNomeNorm);
+      }
+      return !b.setor || b.setor === maquina.setor;
+    });
+  }, [maquina, lotesBloqueio]);
 
   // Produtos filtrados por setor da máquina e busca (código ou nome)
   const produtosFiltrados = useMemo(() => {
@@ -87,6 +104,42 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
     return produtos.find((p) => p.id === produtoSelecionadoId);
   }, [produtos, produtoSelecionadoId]);
 
+  // Detecta automaticamente se o lote ou produto digitado corresponde a um Lote de Bloqueio cadastrado
+  const bloqueioDetectado = useMemo(() => {
+    if (bloqueioIdSelecionado) {
+      const achado = lotesBloqueio.find((b) => b.id === bloqueioIdSelecionado);
+      if (achado) return achado;
+    }
+    const loteLimpo = numeroLote.trim();
+    if (!produtoSelecionado && !loteLimpo) return undefined;
+
+    return (
+      (loteLimpo ? verificarLoteBloqueio('', loteLimpo, maquina?.nome) : undefined) ||
+      (produtoSelecionado ? verificarLoteBloqueio(produtoSelecionado.nome, loteLimpo, maquina?.nome) : undefined) ||
+      (produtoSelecionado?.codigo ? verificarLoteBloqueio(produtoSelecionado.codigo, loteLimpo, maquina?.nome) : undefined)
+    );
+  }, [bloqueioIdSelecionado, produtoSelecionado, numeroLote, maquina, lotesBloqueio, verificarLoteBloqueio]);
+
+  const ehLoteBloqueio = Boolean(bloqueioDetectado || forcarBloqueio);
+
+  // Ação de preenchimento rápido ao clicar em um Lote de Bloqueio pendente
+  const selecionarLoteBloqueioRapido = (bloqueio: LoteBloqueio) => {
+    setNumeroLote(bloqueio.numeroLote);
+    setBloqueioIdSelecionado(bloqueio.id);
+    setForcarBloqueio(true);
+
+    const prodEncontrado = produtos.find((p) => {
+      if (bloqueio.codigoProduto && p.codigo === bloqueio.codigoProduto) return true;
+      const nomeP = p.nome.toLowerCase().trim();
+      const nomeB = bloqueio.produto.toLowerCase().trim();
+      return nomeP === nomeB || nomeP.includes(nomeB) || nomeB.includes(nomeP);
+    });
+
+    if (prodEncontrado) {
+      setProdutoSelecionadoId(prodEncontrado.id);
+    }
+  };
+
   // Tempo de envase específico para ESTA máquina
   const tempoEnvaseMaquina = useMemo(() => {
     if (!produtoSelecionado || !maquina) return 0;
@@ -113,7 +166,9 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
         dataInicio,
         horaInicio,
         numeroLote.trim(),
-        tempoEnvaseMaquina
+        tempoEnvaseMaquina,
+        ehLoteBloqueio,
+        bloqueioDetectado?.id || bloqueioIdSelecionado || undefined
       );
       aoFechar();
     } finally {
@@ -161,12 +216,84 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
 
         {/* Formulário com Scroll Interno */}
         <form onSubmit={handleSubmit} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+          {/* Sugestões de Lotes de Bloqueio Pendentes para esta máquina */}
+          {bloqueiosCompativeis.length > 0 && (
+            <div className="bg-fuchsia-950/40 border border-fuchsia-500/40 rounded p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-fuchsia-300 font-bold uppercase tracking-wider">
+                <span className="flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400 animate-pulse" />
+                  <span>Lotes de Bloqueio Pendentes para {maquina.nome}</span>
+                </span>
+                <span className="text-[9px] text-fuchsia-400/80 hidden sm:inline">Clique para preencher</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {bloqueiosCompativeis.map((b) => (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => selecionarLoteBloqueioRapido(b)}
+                    className={`text-left text-[11px] px-2.5 py-1.5 rounded border transition-all flex items-center gap-2 cursor-pointer ${
+                      bloqueioIdSelecionado === b.id || numeroLote.trim() === b.numeroLote.trim()
+                        ? 'bg-fuchsia-600 text-white border-fuchsia-300 shadow-md font-bold'
+                        : 'bg-black/60 text-fuchsia-200 border-fuchsia-800 hover:border-fuchsia-500 hover:bg-fuchsia-900/40'
+                    }`}
+                  >
+                    <span className="font-mono font-black">{b.numeroLote}</span>
+                    <span className="text-white/40">|</span>
+                    <span className="truncate max-w-[130px] text-[10px]">{b.produto}</span>
+                    <span className="text-[9px] px-1 py-0.2 rounded bg-black/40 uppercase font-mono font-bold text-fuchsia-300">
+                      {b.prazo === 'hoje' ? 'HOJE' : b.prazo === 'semana' ? 'SEMANA' : 'MÊS'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Alerta de Lote de Bloqueio Identificado */}
+          {ehLoteBloqueio && (
+            <div
+              id="alerta-bloqueio-detectado-modal"
+              className="bg-fuchsia-950/90 border-2 border-fuchsia-500 text-fuchsia-100 rounded p-3 flex items-start gap-2.5 shadow-[0_0_20px_rgba(217,70,239,0.3)] animate-pulse"
+            >
+              <ShieldAlert className="w-5 h-5 text-fuchsia-400 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <div className="flex items-center gap-2">
+                  <span className="font-black text-xs uppercase tracking-wider text-white">
+                    Lote de Bloqueio Detectado (Prioridade Máxima)
+                  </span>
+                  <span className="bg-fuchsia-600 text-white text-[9px] px-1.5 py-0.2 rounded font-black tracking-widest uppercase shadow">
+                    BLOQUEIO
+                  </span>
+                </div>
+                <p className="text-[11px] text-fuchsia-200/90 leading-tight">
+                  Este lote possui prioridade máxima (venda antecipada). Ao iniciar, o card da máquina mostrará o
+                  alerta visual magenta e a etiqueta piscando <strong>"BLOQUEIO"</strong> durante todo o processamento.
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Número do Lote */}
           <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1 flex items-center gap-1.5">
-              <Hash className="w-3 h-3 text-[#FFD100]" />
-              <span>Número do Lote</span>
-              <span className="text-red-400 font-bold">*</span>
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1.5">
+                <Hash className="w-3 h-3 text-[#FFD100]" />
+                <span>Número do Lote</span>
+                <span className="text-red-400 font-bold">*</span>
+              </span>
+              <label className="flex items-center gap-1.5 cursor-pointer text-[10px] text-fuchsia-400 hover:text-fuchsia-300">
+                <input
+                  type="checkbox"
+                  checked={ehLoteBloqueio}
+                  onChange={(e) => {
+                    setForcarBloqueio(e.target.checked);
+                    if (!e.target.checked) setBloqueioIdSelecionado(null);
+                  }}
+                  className="w-3.5 h-3.5 rounded accent-fuchsia-600 cursor-pointer"
+                />
+                <span className="font-bold uppercase tracking-wide">Marcar como Bloqueio</span>
+              </label>
             </label>
             <input
               id="input-numero-lote-modal"
@@ -175,7 +302,11 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
               onChange={(e) => setNumeroLote(e.target.value)}
               placeholder="Digite o número do lote (ex: 104523, 2026-L01)..."
               required
-              className="w-full bg-black/60 border border-white/20 text-white font-mono text-sm font-bold px-3 py-2 rounded focus:outline-none focus:border-[#FFD100] focus:ring-1 focus:ring-[#FFD100]"
+              className={`w-full bg-black/60 border text-white font-mono text-sm font-bold px-3 py-2 rounded focus:outline-none ${
+                ehLoteBloqueio
+                  ? 'border-fuchsia-500 ring-1 ring-fuchsia-500 text-fuchsia-200'
+                  : 'border-white/20 focus:border-[#FFD100] focus:ring-1 focus:ring-[#FFD100]'
+              }`}
             />
           </div>
 

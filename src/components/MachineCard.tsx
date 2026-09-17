@@ -10,6 +10,7 @@ import {
   Sparkles,
   Droplets,
   Hourglass,
+  ShieldAlert,
 } from 'lucide-react';
 import { Maquina, StatusMaquina } from '../types';
 import { useProduction } from '../context/ProductionContext';
@@ -28,6 +29,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
     alterarStatusMaquina,
     finalizarLote,
     atualizarHoraInicio,
+    lotesBloqueio,
   } = useProduction();
 
   const [editandoHora, setEditandoHora] = useState(false);
@@ -105,23 +107,49 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
   const aguardandoManipulacao = statusEfetivo === 'aguardando_manipulacao';
   const temLoteAtivo = Boolean(maquina.produtoAtualNome && (statusEfetivo === 'em_andamento' || estaAtrasado || temProblema));
 
+  // Identifica se esta máquina está processando um Lote de Bloqueio (prioridade máxima)
+  const isBloqueioAtivo = Boolean(
+    maquina.isBloqueio ||
+      (temLoteAtivo &&
+        lotesBloqueio.some(
+          (b) =>
+            b.status === 'em_andamento' &&
+            (b.maquinaEmUsoId === maquina.id ||
+              (b.numeroLote &&
+                maquina.numeroLote &&
+                b.numeroLote.toLowerCase().trim() === maquina.numeroLote.toLowerCase().trim()))
+        ))
+  );
+
+  const cardBorderFinal = isBloqueioAtivo
+    ? 'border-2 border-fuchsia-500 shadow-[0_0_20px_rgba(217,70,239,0.35)] ring-1 ring-fuchsia-400/50'
+    : configStatus.cardBorder;
+
+  const cardBgFinal = isBloqueioAtivo
+    ? 'bg-gradient-to-b from-[#240e29] via-[#1a0c20] to-[#140817]'
+    : configStatus.cardBg;
+
   return (
     <div
       id={`card-maquina-${maquina.id}`}
-      className={`rounded p-3.5 flex flex-col justify-between relative shadow-lg transition-all ${configStatus.cardBorder} ${configStatus.cardBg}`}
+      className={`rounded p-3.5 flex flex-col justify-between relative shadow-lg transition-all ${cardBorderFinal} ${cardBgFinal}`}
     >
       {/* Corner Tag para atraso */}
-      {estaAtrasado && (
+      {estaAtrasado && !isBloqueioAtivo && (
         <div className="absolute top-0 right-0 px-2 py-0.5 bg-orange-500 text-black text-[8px] font-black uppercase tracking-widest z-10">
           DELAY
         </div>
       )}
 
-      {/* Topo do Card: Nome da Máquina e Selo de Status */}
+      {/* Topo do Card: Nome da Máquina, Etiqueta Piscando de Bloqueio e Selo de Status */}
       <div>
         <div className="flex items-start justify-between gap-2 mb-2">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-xs font-black text-white uppercase tracking-wider">
+            <span
+              className={`text-xs font-black uppercase tracking-wider ${
+                isBloqueioAtivo ? 'text-fuchsia-200' : 'text-white'
+              }`}
+            >
               {maquina.nome}
             </span>
             {maquina.linhaPadrao && (
@@ -131,14 +159,44 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
             )}
           </div>
 
-          {/* Selo de Status Colorido */}
-          <span
-            id={`selo-status-${maquina.id}`}
-            className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-wider whitespace-nowrap shadow-sm ${configStatus.seloBg}`}
-          >
-            {configStatus.label}
-          </span>
+          <div className="flex items-center gap-1.5 flex-wrap justify-end">
+            {/* Etiqueta Piscando de BLOQUEIO (prioridade máxima) */}
+            {isBloqueioAtivo && (
+              <span
+                id={`etiqueta-bloqueio-${maquina.id}`}
+                className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-fuchsia-600 text-white animate-pulse border border-fuchsia-300 shadow-[0_0_12px_rgba(217,70,239,0.9)] flex items-center gap-1 shrink-0"
+                title="LOTE DE BLOQUEIO: Já vendido, prioridade máxima de produção"
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                <span>BLOQUEIO</span>
+              </span>
+            )}
+
+            {/* Selo de Status Colorido Normal */}
+            <span
+              id={`selo-status-${maquina.id}`}
+              className={`text-[9px] px-2 py-0.5 rounded font-bold uppercase tracking-wider whitespace-nowrap shadow-sm ${configStatus.seloBg}`}
+            >
+              {configStatus.label}
+            </span>
+          </div>
         </div>
+
+        {/* Alerta Visual de Lote de Bloqueio se ativo */}
+        {isBloqueioAtivo && (
+          <div
+            id={`alerta-bloqueio-${maquina.id}`}
+            className="text-[10px] bg-fuchsia-950/80 border border-fuchsia-500/60 text-fuchsia-200 font-bold uppercase tracking-wider px-2.5 py-1 rounded mb-2 flex items-center justify-between shadow-[0_0_12px_rgba(217,70,239,0.25)]"
+          >
+            <div className="flex items-center gap-1.5">
+              <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400 shrink-0 animate-pulse" />
+              <span className="text-white font-black">LOTE JÁ VENDIDO</span>
+            </div>
+            <span className="text-[9px] font-mono text-fuchsia-300 font-bold bg-fuchsia-900/80 px-1.5 py-0.5 rounded border border-fuchsia-700/60">
+              PRIORIDADE MÁXIMA
+            </span>
+          </div>
+        )}
 
         {/* Informações centrais do Card baseadas no status */}
         {temProblema && (
@@ -271,9 +329,15 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
             <div className="w-full bg-black h-1.5 rounded-full overflow-hidden mb-2 border border-white/5">
               <div
                 className={`h-full transition-all duration-1000 ${
-                  estaAtrasado ? 'bg-orange-500 w-full' : temProblema ? 'bg-red-600' : 'bg-[#FFD100]'
+                  isBloqueioAtivo
+                    ? 'bg-gradient-to-r from-fuchsia-500 to-pink-500 shadow-[0_0_10px_rgba(217,70,239,0.7)]'
+                    : estaAtrasado
+                    ? 'bg-orange-500 w-full'
+                    : temProblema
+                    ? 'bg-red-600'
+                    : 'bg-[#FFD100]'
                 }`}
-                style={{ width: estaAtrasado ? '100%' : `${Math.min(100, progresso.porcentagem)}%` }}
+                style={{ width: estaAtrasado && !isBloqueioAtivo ? '100%' : `${Math.min(100, progresso.porcentagem)}%` }}
               />
             </div>
 

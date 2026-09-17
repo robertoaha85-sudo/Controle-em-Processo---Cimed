@@ -1,13 +1,22 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
-import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, MembroEquipe } from '../types';
+import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, MembroEquipe, LoteBloqueio, StatusBloqueio } from '../types';
 import { calcularPrevisaoTermino, obterTempoProdutoParaMaquina, PRODUTOS_INICIAIS, MAQUINAS_INICIAIS, EQUIPES_INICIAIS } from '../initialData';
 import { tocarAlarmeProblemaMecanico, tocarSomSucesso, isSoundEnabled, setSoundEnabled } from '../utils/audio';
+import {
+  ouvirLotesBloqueio,
+  cadastrarLoteBloqueio,
+  atualizarLoteBloqueio,
+  concluirLoteBloqueio,
+  excluirLoteBloqueio,
+  obterLotesBloqueioLocais,
+} from '../services/lotesBloqueioService';
 
 interface ProductionContextType {
   maquinas: Maquina[];
   produtos: Produto[];
   historico: LoteHistorico[];
   equipes: MembroEquipe[];
+  lotesBloqueio: LoteBloqueio[];
   horaAtual: Date;
   conectado: boolean;
   somAtivo: boolean;
@@ -20,13 +29,20 @@ interface ProductionContextType {
     estaAtrasado: boolean;
     atrasoMinutos: number;
   };
+  verificarLoteBloqueio: (
+    produtoNomeOuCodigo: string,
+    numeroLote?: string,
+    maquinaNome?: string
+  ) => LoteBloqueio | undefined;
   iniciarLote: (
     maquinaId: string,
     produtoId: string,
     dataInicio: string,
     horaInicio: string,
     numeroLote: string,
-    tempoMinutosCustomizado?: number
+    tempoMinutosCustomizado?: number,
+    isBloqueioForcado?: boolean,
+    loteBloqueioId?: string
   ) => Promise<void>;
   marcarProblemaMecanico: (maquinaId: string, detalhe?: string) => Promise<void>;
   resolverProblemaMecanico: (maquinaId: string) => Promise<void>;
@@ -43,6 +59,17 @@ interface ProductionContextType {
   excluirLoteHistorico: (id: string) => Promise<void>;
   atualizarEquipes: (novasEquipes: MembroEquipe[]) => Promise<void>;
   restaurarDadosPadrao: () => Promise<void>;
+  // Métodos específicos para Lotes de Bloqueio (Firebase Firestore)
+  adicionarLoteBloqueio: (
+    dados: Omit<LoteBloqueio, 'id' | 'criadoEm' | 'status'> & {
+      id?: string;
+      criadoEm?: string;
+      status?: StatusBloqueio;
+    }
+  ) => Promise<string>;
+  atualizarLoteBloqueioDados: (id: string, dados: Partial<LoteBloqueio>) => Promise<void>;
+  concluirLoteBloqueioStatus: (id: string) => Promise<void>;
+  removerLoteBloqueio: (id: string) => Promise<void>;
 }
 
 const ProductionContext = createContext<ProductionContextType | null>(null);
@@ -52,6 +79,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   const [produtos, setProdutos] = useState<Produto[]>(PRODUTOS_INICIAIS);
   const [historico, setHistorico] = useState<LoteHistorico[]>([]);
   const [equipes, setEquipes] = useState<MembroEquipe[]>(EQUIPES_INICIAIS);
+  const [lotesBloqueio, setLotesBloqueio] = useState<LoteBloqueio[]>(obterLotesBloqueioLocais);
   const [conectado, setConectado] = useState(false);
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [somAtivo, setSomAtivo] = useState(isSoundEnabled());
@@ -174,6 +202,54 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       if (pollingInterval) clearInterval(pollingInterval);
     };
   }, []);
+
+  // Sincronização em tempo real dos Lotes de Bloqueio no Firebase Firestore (com fallback resiliente)
+  useEffect(() => {
+    const cancelarInscricao = ouvirLotesBloqueio((novosLotes) => {
+      setLotesBloqueio(novosLotes);
+    });
+    return () => cancelarInscricao();
+  }, []);
+
+  // Verifica se um produto e/ou número de lote corresponde a um Lote de Bloqueio cadastrado e pendente/ativo
+  const verificarLoteBloqueio = useCallback(
+    (produtoNomeOuCodigo: string, numeroLote?: string, maquinaNome?: string): LoteBloqueio | undefined => {
+      if (!produtoNomeOuCodigo && !numeroLote) return undefined;
+      const prodNorm = (produtoNomeOuCodigo || '').toLowerCase().trim();
+      const loteNorm = (numeroLote || '').toLowerCase().trim();
+      const maqNorm = (maquinaNome || '').toLowerCase().trim();
+
+      return lotesBloqueio.find((b) => {
+        if (b.status === 'concluido' || b.status === 'cancelado') return false;
+
+        // Se informou número do lote e coincide exatamente
+        if (loteNorm && b.numeroLote && b.numeroLote.toLowerCase().trim() === loteNorm) {
+          return true;
+        }
+
+        // Se coincide pelo código ou nome do produto
+        const matchProd =
+          (b.codigoProduto && b.codigoProduto.toLowerCase().trim() === prodNorm) ||
+          b.produto.toLowerCase().trim() === prodNorm ||
+          b.produto.toLowerCase().includes(prodNorm) ||
+          (prodNorm && prodNorm.includes(b.produto.toLowerCase().trim()));
+
+        if (matchProd) {
+          // Se a máquina foi informada e o lote de bloqueio restringe máquina
+          if (maqNorm && b.maquina && b.maquina.toLowerCase() !== 'todas') {
+            if (b.maquina.toLowerCase().trim() === maqNorm || maqNorm.includes(b.maquina.toLowerCase().trim())) {
+              return true;
+            }
+          } else {
+            return true;
+          }
+        }
+
+        return false;
+      });
+    },
+    [lotesBloqueio]
+  );
 
   // Determina status efetivo (calcula 'atrasado' se ultrapassou a previsão)
   const obterStatusEfetivo = useCallback((maquina: Maquina): StatusMaquina => {
@@ -335,14 +411,16 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     };
   }, [maquinas, obterStatusEfetivo]);
 
-  // Iniciar lote em uma máquina
+  // Iniciar lote em uma máquina (detecta automaticamente se é Lote de Bloqueio cadastrado)
   const iniciarLote = async (
     maquinaId: string,
     produtoId: string,
     dataInicio: string,
     horaInicio: string,
     numeroLote: string,
-    tempoMinutosCustomizado?: number
+    tempoMinutosCustomizado?: number,
+    isBloqueioForcado?: boolean,
+    loteBloqueioId?: string
   ) => {
     const maquina = maquinas.find((m) => m.id === maquinaId);
     const produto = produtos.find((p) => p.id === produtoId);
@@ -355,7 +433,16 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
 
     const previsaoTermino = calcularPrevisaoTermino(horaInicio, tempoMinutos);
 
-    const payload = {
+    // Identifica se este lote corresponde a um Lote de Bloqueio cadastrado
+    const loteBloqueioEncontrado =
+      loteBloqueioId
+        ? lotesBloqueio.find((b) => b.id === loteBloqueioId)
+        : verificarLoteBloqueio(produto.nome, numeroLote, maquina.nome) ||
+          (produto.codigo ? verificarLoteBloqueio(produto.codigo, numeroLote, maquina.nome) : undefined);
+
+    const ehBloqueio = Boolean(isBloqueioForcado || loteBloqueioEncontrado);
+
+    const payload: Partial<Maquina> = {
       status: 'em_andamento' as const,
       produtoAtualId: produto.id,
       produtoAtualCodigo: produto.codigo || null,
@@ -367,12 +454,24 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       tempoEnvaseMinutos: tempoMinutos,
       teveProblemaMecanico: false,
       detalheProblema: null,
+      isBloqueio: ehBloqueio,
+      loteBloqueioId: loteBloqueioEncontrado ? loteBloqueioEncontrado.id : (isBloqueioForcado ? 'bloqueio-avulso' : null),
     };
 
     // Atualiza otimista local
     setMaquinas((prev) =>
       prev.map((m) => (m.id === maquinaId ? { ...m, ...payload } : m))
     );
+
+    // Se é Lote de Bloqueio, atualiza status para 'em_andamento' no Firestore
+    if (loteBloqueioEncontrado) {
+      atualizarLoteBloqueio(loteBloqueioEncontrado.id, {
+        status: 'em_andamento',
+        maquinaEmUsoId: maquina.id,
+        maquina: maquina.nome,
+        iniciadoEm: new Date().toISOString(),
+      });
+    }
 
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
@@ -525,7 +624,26 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       teveProblemaMecanico: Boolean(maquinaAlvo.teveProblemaMecanico || maquinaAlvo.status === 'problema_mecanico'),
       dataFinalizacao: dataStr,
       observacao: observacao || '',
+      isBloqueio: Boolean(maquinaAlvo.isBloqueio),
     };
+
+    // Se a máquina estava com lote de bloqueio ativo, conclui no Firestore
+    if (maquinaAlvo.isBloqueio || maquinaAlvo.loteBloqueioId) {
+      const bId = maquinaAlvo.loteBloqueioId;
+      const bloqueioAlvo =
+        bId && bId !== 'bloqueio-avulso'
+          ? lotesBloqueio.find((b) => b.id === bId)
+          : lotesBloqueio.find(
+              (b) =>
+                b.status === 'em_andamento' &&
+                ((maquinaAlvo.numeroLote && b.numeroLote.toLowerCase() === maquinaAlvo.numeroLote.toLowerCase()) ||
+                  b.maquinaEmUsoId === maquinaId)
+            );
+
+      if (bloqueioAlvo) {
+        concluirLoteBloqueio(bloqueioAlvo.id).catch(console.warn);
+      }
+    }
 
     // 1. Atualização Otimista Imediata: Libera a máquina na hora na interface
     setMaquinas((prev) =>
@@ -544,6 +662,8 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
               tempoEnvaseMinutos: null,
               teveProblemaMecanico: false,
               detalheProblema: null,
+              isBloqueio: false,
+              loteBloqueioId: null,
               ultimaAtualizacao: agora.toISOString(),
             }
           : m
@@ -626,6 +746,32 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     setEquipes(EQUIPES_INICIAIS);
   };
 
+  // Funções de Lotes de Bloqueio (Firebase)
+  const adicionarLoteBloqueio = async (
+    dados: Omit<LoteBloqueio, 'id' | 'criadoEm' | 'status'> & {
+      id?: string;
+      criadoEm?: string;
+      status?: StatusBloqueio;
+    }
+  ) => {
+    const id = await cadastrarLoteBloqueio(dados);
+    tocarSomSucesso();
+    return id;
+  };
+
+  const atualizarLoteBloqueioDados = async (id: string, dados: Partial<LoteBloqueio>) => {
+    await atualizarLoteBloqueio(id, dados);
+  };
+
+  const concluirLoteBloqueioStatus = async (id: string) => {
+    await concluirLoteBloqueio(id);
+    tocarSomSucesso();
+  };
+
+  const removerLoteBloqueio = async (id: string) => {
+    await excluirLoteBloqueio(id);
+  };
+
   return (
     <ProductionContext.Provider
       value={{
@@ -633,6 +779,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         produtos,
         historico,
         equipes,
+        lotesBloqueio,
         horaAtual,
         conectado,
         somAtivo,
@@ -640,6 +787,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         resumo,
         obterStatusEfetivo,
         obterProgresso,
+        verificarLoteBloqueio,
         iniciarLote,
         marcarProblemaMecanico,
         resolverProblemaMecanico,
@@ -652,6 +800,10 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         excluirLoteHistorico,
         atualizarEquipes,
         restaurarDadosPadrao,
+        adicionarLoteBloqueio,
+        atualizarLoteBloqueioDados,
+        concluirLoteBloqueioStatus,
+        removerLoteBloqueio,
       }}
     >
       {children}

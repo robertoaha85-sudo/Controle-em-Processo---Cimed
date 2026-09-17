@@ -34,6 +34,26 @@ export interface MembroEquipe {
   email: string;
 }
 
+export type PrazoBloqueio = 'hoje' | 'semana' | 'mes';
+export type StatusBloqueio = 'pendente' | 'em_andamento' | 'concluido' | 'cancelado';
+
+export interface LoteBloqueio {
+  id: string;
+  produto: string;
+  codigoProduto?: string | null;
+  numeroLote: string;
+  maquina: string; // Ex: "Norden 1", "CAM", "Todas", etc.
+  setor?: Setor;
+  prazo: PrazoBloqueio;
+  dataLimite?: string;
+  status: StatusBloqueio;
+  observacoes?: string;
+  criadoEm: string;
+  concluidoEm?: string | null;
+  iniciadoEm?: string | null;
+  maquinaEmUsoId?: string | null;
+}
+
 export interface Maquina {
   id: string;
   nome: string; // Ex: "Norden I", "CAM"
@@ -51,6 +71,8 @@ export interface Maquina {
   teveProblemaMecanico?: boolean; // Flag se durante este lote ocorreu problema
   ultimaAtualizacao?: string;
   detalheProblema?: string | null;
+  isBloqueio?: boolean;
+  loteBloqueioId?: string | null;
 }
 
 export interface LoteHistorico {
@@ -68,6 +90,7 @@ export interface LoteHistorico {
   teveProblemaMecanico: boolean;
   dataFinalizacao: string; // YYYY-MM-DD
   observacao?: string;
+  isBloqueio?: boolean;
 }
 
 export interface ResumoStatus {

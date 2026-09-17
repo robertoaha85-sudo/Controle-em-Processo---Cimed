@@ -1,14 +1,29 @@
 import React from 'react';
-import { Activity, AlertTriangle, CheckCircle2, Clock, Volume2, VolumeX, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import {
+  Activity,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Volume2,
+  VolumeX,
+  Wifi,
+  WifiOff,
+  RefreshCw,
+  ShieldAlert,
+} from 'lucide-react';
 import { useProduction } from '../context/ProductionContext';
 
 interface NavbarProps {
-  abaAtiva: 'dashboard' | 'produtos' | 'historico';
-  setAbaAtiva: (aba: 'dashboard' | 'produtos' | 'historico') => void;
+  abaAtiva: 'dashboard' | 'produtos' | 'historico' | 'bloqueio';
+  setAbaAtiva: (aba: 'dashboard' | 'produtos' | 'historico' | 'bloqueio') => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
-  const { horaAtual, conectado, somAtivo, alternarSom, resumo } = useProduction();
+  const { horaAtual, conectado, somAtivo, alternarSom, resumo, lotesBloqueio } = useProduction();
+
+  const bloqueiosAtivos = lotesBloqueio.filter((b) => b.status === 'em_andamento').length;
+  const bloqueiosPendentes = lotesBloqueio.filter((b) => b.status === 'pendente').length;
+  const totalBloqueiosPendentes = bloqueiosAtivos + bloqueiosPendentes;
 
   // Formata hora digital HH:mm:ss
   const horaStr = horaAtual.toLocaleTimeString('pt-BR', {
@@ -186,6 +201,19 @@ export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
               <span className="w-2 h-2 rounded-full bg-white/40"></span>
               <span>{resumo.livres} Livre / Finalizado</span>
             </div>
+
+            {/* Lotes de Bloqueio Prioritários */}
+            {totalBloqueiosPendentes > 0 && (
+              <button
+                onClick={() => setAbaAtiva('bloqueio')}
+                className="bg-fuchsia-600/20 border border-fuchsia-500/80 text-fuchsia-300 px-2.5 py-1 rounded flex items-center gap-1.5 font-black uppercase text-[11px] tracking-wider cursor-pointer hover:bg-fuchsia-600/30 transition-all shadow-[0_0_12px_rgba(217,70,239,0.3)] animate-pulse"
+                title="Clique para gerenciar os Lotes de Bloqueio com prioridade máxima"
+              >
+                <span className="w-2 h-2 rounded-full bg-fuchsia-500"></span>
+                <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400" />
+                <span>{totalBloqueiosPendentes} Bloqueio{totalBloqueiosPendentes > 1 ? 's' : ''}</span>
+              </button>
+            )}
           </div>
 
           <div className="text-white/40 text-[11px] font-mono hidden lg:block tracking-wider uppercase">
@@ -213,6 +241,30 @@ export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
                 <span className="w-2 h-2 rounded-full bg-red-600 animate-ping ml-0.5" />
               )}
             </div>
+          </button>
+
+          <button
+            id="tab-btn-bloqueio"
+            onClick={() => setAbaAtiva('bloqueio')}
+            className={`px-6 sm:px-8 py-3 text-xs sm:text-sm font-bold uppercase tracking-wider transition-colors border-r border-white/5 whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+              abaAtiva === 'bloqueio'
+                ? 'bg-fuchsia-600 text-white shadow-[0_0_15px_rgba(217,70,239,0.5)]'
+                : 'text-fuchsia-300 hover:text-white hover:bg-fuchsia-950/40'
+            }`}
+          >
+            <ShieldAlert className="w-4 h-4 text-fuchsia-400" />
+            <span>Lotes de Bloqueio</span>
+            {totalBloqueiosPendentes > 0 && (
+              <span
+                className={`ml-1 px-1.5 py-0.2 text-[10px] font-black rounded-full font-mono ${
+                  abaAtiva === 'bloqueio'
+                    ? 'bg-white text-fuchsia-700'
+                    : 'bg-fuchsia-500 text-white animate-pulse'
+                }`}
+              >
+                {totalBloqueiosPendentes}
+              </span>
+            )}
           </button>
 
           <button

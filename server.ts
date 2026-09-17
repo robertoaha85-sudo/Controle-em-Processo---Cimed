@@ -196,6 +196,7 @@ async function startServer() {
       teveProblemaMecanico: Boolean(maquina.teveProblemaMecanico || maquina.status === 'problema_mecanico'),
       dataFinalizacao: dataStr,
       observacao: observacao || '',
+      isBloqueio: Boolean(maquina.isBloqueio),
     };
 
     store.historico.unshift(novoLote);
@@ -214,6 +215,8 @@ async function startServer() {
       tempoEnvaseMinutos: null,
       teveProblemaMecanico: false,
       detalheProblema: null,
+      isBloqueio: false,
+      loteBloqueioId: null,
       ultimaAtualizacao: agora.toISOString(),
     };
 

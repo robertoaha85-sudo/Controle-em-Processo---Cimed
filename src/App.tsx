@@ -4,10 +4,11 @@ import { Navbar } from './components/Navbar';
 import { DashboardTab } from './components/DashboardTab';
 import { ProductsTab } from './components/ProductsTab';
 import { HistoryTab } from './components/HistoryTab';
+import { LotesBloqueioTab } from './components/LotesBloqueioTab';
 import { MobileBottomNav } from './components/MobileBottomNav';
 
 export default function App() {
-  const [abaAtiva, setAbaAtiva] = useState<'dashboard' | 'produtos' | 'historico'>('dashboard');
+  const [abaAtiva, setAbaAtiva] = useState<'dashboard' | 'produtos' | 'historico' | 'bloqueio'>('dashboard');
 
   return (
     <ProductionProvider>
@@ -18,6 +19,9 @@ export default function App() {
         {/* Conteúdo Principal */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 py-4 sm:py-6 pb-24 md:pb-8">
           {abaAtiva === 'dashboard' && <DashboardTab />}
+          {abaAtiva === 'bloqueio' && (
+            <LotesBloqueioTab aoIrParaDashboard={() => setAbaAtiva('dashboard')} />
+          )}
           {abaAtiva === 'produtos' && <ProductsTab />}
           {abaAtiva === 'historico' && <HistoryTab />}
         </main>

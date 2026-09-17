@@ -1,0 +1,893 @@
+import React, { useState, useMemo } from 'react';
+import {
+  ShieldAlert,
+  Plus,
+  Search,
+  CheckCircle2,
+  Trash2,
+  Clock,
+  Calendar,
+  AlertTriangle,
+  Play,
+  RotateCcw,
+  Sparkles,
+  Layers,
+  Hash,
+  FileText,
+  X,
+  Check,
+} from 'lucide-react';
+import { useProduction } from '../context/ProductionContext';
+import { LoteBloqueio, PrazoBloqueio, Setor } from '../types';
+
+interface LotesBloqueioTabProps {
+  aoIrParaDashboard?: () => void;
+}
+
+export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDashboard }) => {
+  const {
+    lotesBloqueio,
+    produtos,
+    maquinas,
+    adicionarLoteBloqueio,
+    concluirLoteBloqueio,
+    removerLoteBloqueio,
+    atualizarLoteBloqueio,
+    horaAtual,
+  } = useProduction();
+
+  // Estados de controle do formulário
+  const [modalCadastroAberto, setModalCadastroAberto] = useState(false);
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendentes' | 'hoje' | 'concluidos'>('pendentes');
+  const [busca, setBusca] = useState('');
+
+  // Campos do formulário de cadastro
+  const [produtoNome, setProdutoNome] = useState('');
+  const [codigoProduto, setCodigoProduto] = useState('');
+  const [numeroLote, setNumeroLote] = useState('');
+  const [maquinaDestino, setMaquinaDestino] = useState('Todas');
+  const [setorDestino, setSetorDestino] = useState<'todos' | Setor>('todos');
+  const [prazo, setPrazo] = useState<PrazoBloqueio>('hoje');
+  const [dataLimiteCustom, setDataLimiteCustom] = useState('');
+  const [quantidade, setQuantidade] = useState('');
+  const [cliente, setCliente] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  const [salvando, setSalvando] = useState(false);
+  const [loteParaExcluir, setLoteParaExcluir] = useState<string | null>(null);
+
+  // Busca rápida de produtos no modal
+  const [buscaProdutoModal, setBuscaProdutoModal] = useState('');
+
+  const produtosSugeridosModal = useMemo(() => {
+    if (!buscaProdutoModal.trim()) return produtos.slice(0, 8);
+    const termo = buscaProdutoModal.toLowerCase().trim();
+    return produtos.filter(
+      (p) =>
+        p.nome.toLowerCase().includes(termo) ||
+        (p.codigo && p.codigo.toLowerCase().includes(termo)) ||
+        p.linha.toLowerCase().includes(termo)
+    ).slice(0, 10);
+  }, [produtos, buscaProdutoModal]);
+
+  const selecionarProdutoModal = (p: { nome: string; codigo?: string; setor: Setor }) => {
+    setProdutoNome(p.nome);
+    setCodigoProduto(p.codigo || '');
+    setSetorDestino(p.setor);
+    setBuscaProdutoModal('');
+  };
+
+  // Contadores analíticos
+  const metricas = useMemo(() => {
+    const hoje = lotesBloqueio.filter((b) => b.prazo === 'hoje' && b.status !== 'concluido' && b.status !== 'cancelado').length;
+    const semana = lotesBloqueio.filter((b) => b.prazo === 'semana' && b.status !== 'concluido' && b.status !== 'cancelado').length;
+    const mes = lotesBloqueio.filter((b) => b.prazo === 'mes' && b.status !== 'concluido' && b.status !== 'cancelado').length;
+    const emProducao = lotesBloqueio.filter((b) => b.status === 'em_andamento').length;
+    const concluidos = lotesBloqueio.filter((b) => b.status === 'concluido').length;
+    const totalAtivos = lotesBloqueio.filter((b) => b.status !== 'concluido' && b.status !== 'cancelado').length;
+
+    return { hoje, semana, mes, emProducao, concluidos, totalAtivos };
+  }, [lotesBloqueio]);
+
+  // Ordenação por urgência:
+  // 1. Em andamento na máquina
+  // 2. Prazo 'hoje'
+  // 3. Prazo 'semana'
+  // 4. Prazo 'mes'
+  // 5. Concluídos por último
+  const lotesOrdenados = useMemo(() => {
+    const termo = busca.trim().toLowerCase();
+
+    return [...lotesBloqueio]
+      .filter((lote) => {
+        // Filtro por tab/status
+        if (filtroStatus === 'pendentes' && lote.status === 'concluido') return false;
+        if (filtroStatus === 'hoje' && (lote.prazo !== 'hoje' || lote.status === 'concluido')) return false;
+        if (filtroStatus === 'concluidos' && lote.status !== 'concluido') return false;
+
+        // Busca por texto
+        if (termo) {
+          const matchLote = lote.numeroLote.toLowerCase().includes(termo);
+          const matchProduto = lote.produto.toLowerCase().includes(termo);
+          const matchCodigo = lote.codigoProduto?.toLowerCase().includes(termo);
+          const matchMaquina = lote.maquina?.toLowerCase().includes(termo);
+          const matchCliente = lote.cliente?.toLowerCase().includes(termo);
+          return matchLote || matchProduto || matchCodigo || matchMaquina || matchCliente;
+        }
+
+        return true;
+      })
+      .sort((a, b) => {
+        // Concluídos sempre no final
+        if (a.status === 'concluido' && b.status !== 'concluido') return 1;
+        if (a.status !== 'concluido' && b.status === 'concluido') return -1;
+
+        // Em andamento vem primeiro
+        if (a.status === 'em_andamento' && b.status !== 'em_andamento') return -1;
+        if (a.status !== 'em_andamento' && b.status === 'em_andamento') return 1;
+
+        // Ordem por prazo: hoje (0) > semana (1) > mes (2)
+        const pesoPrazo: Record<PrazoBloqueio, number> = {
+          hoje: 0,
+          semana: 1,
+          mes: 2,
+        };
+
+        const pesoA = pesoPrazo[a.prazo] ?? 3;
+        const pesoB = pesoPrazo[b.prazo] ?? 3;
+
+        if (pesoA !== pesoB) return pesoA - pesoB;
+
+        // Desempate pela data de criação
+        return new Date(b.criadoEm || 0).getTime() - new Date(a.criadoEm || 0).getTime();
+      });
+  }, [lotesBloqueio, filtroStatus, busca]);
+
+  const limparFormulario = () => {
+    setProdutoNome('');
+    setCodigoProduto('');
+    setNumeroLote('');
+    setMaquinaDestino('Todas');
+    setSetorDestino('todos');
+    setPrazo('hoje');
+    setDataLimiteCustom('');
+    setQuantidade('');
+    setCliente('');
+    setObservacoes('');
+    setBuscaProdutoModal('');
+  };
+
+  const handleSalvarLote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!produtoNome.trim() || !numeroLote.trim()) return;
+
+    setSalvando(true);
+    try {
+      await adicionarLoteBloqueio({
+        produto: produtoNome.trim(),
+        codigoProduto: codigoProduto.trim() || undefined,
+        numeroLote: numeroLote.trim().toUpperCase(),
+        maquina: maquinaDestino,
+        setor: setorDestino === 'todos' ? undefined : setorDestino,
+        prazo,
+        dataLimiteCustom: dataLimiteCustom || undefined,
+        quantidade: quantidade.trim() || undefined,
+        cliente: cliente.trim() || undefined,
+        observacoes: observacoes.trim() || undefined,
+      });
+
+      limparFormulario();
+      setModalCadastroAberto(false);
+    } catch (err) {
+      console.error('Erro ao salvar lote de bloqueio:', err);
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const confirmarExcluirLote = async (id: string) => {
+    await removerLoteBloqueio(id);
+    setLoteParaExcluir(null);
+  };
+
+  return (
+    <div id="lotes-bloqueio-container" className="space-y-5">
+      {/* Cabeçalho da Seção */}
+      <div className="bg-[#18121c] border-2 border-fuchsia-600/40 rounded-lg p-4 sm:p-6 shadow-[0_0_25px_rgba(217,70,239,0.15)] flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+            <div className="w-8 h-8 rounded bg-fuchsia-600 flex items-center justify-center text-white shadow-[0_0_12px_rgba(217,70,239,0.6)]">
+              <ShieldAlert className="w-5 h-5" />
+            </div>
+            <h2 className="text-base sm:text-xl font-black uppercase tracking-wider text-white flex items-center gap-2">
+              <span>Lotes de Bloqueio</span>
+              <span className="text-[10px] px-2 py-0.5 rounded font-black tracking-widest bg-fuchsia-600 text-white uppercase animate-pulse border border-fuchsia-400">
+                PRIORIDADE MÁXIMA
+              </span>
+            </h2>
+          </div>
+          <p className="text-xs sm:text-sm text-fuchsia-200/80 max-w-2xl">
+            Lotes <strong>já vendidos antecipadamente</strong> com atendimento mandatório. Ao serem
+            iniciados no chão de fábrica, a respectiva máquina receberá <strong>destaque visual magenta</strong> e a etiqueta piscando <strong>"BLOQUEIO"</strong>.
+          </p>
+        </div>
+
+        <button
+          id="btn-abrir-cadastro-bloqueio"
+          onClick={() => {
+            limparFormulario();
+            setModalCadastroAberto(true);
+          }}
+          className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white px-4 py-2.5 rounded font-bold uppercase tracking-wider text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(217,70,239,0.4)] transition-all cursor-pointer hover:scale-[1.02] shrink-0"
+        >
+          <Plus className="w-4 h-4 stroke-[3]" />
+          <span>Cadastrar Lote de Bloqueio</span>
+        </button>
+      </div>
+
+      {/* Cards de Métricas e Filtros Rápidos */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3">
+        {/* Vence Hoje (Crítico) */}
+        <button
+          onClick={() => setFiltroStatus('hoje')}
+          className={`p-3 rounded border text-left transition-all cursor-pointer ${
+            filtroStatus === 'hoje'
+              ? 'bg-red-950/80 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)] ring-1 ring-red-400'
+              : 'bg-[#181119] border-red-900/40 hover:border-red-600/60 text-white'
+          }`}
+        >
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-red-400 mb-1">
+            <span>Vence Hoje</span>
+            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+          </div>
+          <div className="text-2xl font-mono font-black text-red-300">{metricas.hoje}</div>
+          <div className="text-[9px] text-red-400/70 font-mono mt-0.5">Urgência Imediata</div>
+        </button>
+
+        {/* Essa Semana */}
+        <button
+          onClick={() => setFiltroStatus('pendentes')}
+          className="p-3 rounded border border-amber-900/40 bg-[#181119] text-left hover:border-amber-600/60 transition-all cursor-pointer"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1">
+            Esta Semana
+          </div>
+          <div className="text-2xl font-mono font-black text-amber-300">{metricas.semana}</div>
+          <div className="text-[9px] text-amber-400/70 font-mono mt-0.5">Prioridade Alta</div>
+        </button>
+
+        {/* Esse Mês */}
+        <button
+          onClick={() => setFiltroStatus('pendentes')}
+          className="p-3 rounded border border-blue-900/40 bg-[#181119] text-left hover:border-blue-600/60 transition-all cursor-pointer"
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1">
+            Este Mês
+          </div>
+          <div className="text-2xl font-mono font-black text-blue-300">{metricas.mes}</div>
+          <div className="text-[9px] text-blue-400/70 font-mono mt-0.5">Planejado</div>
+        </button>
+
+        {/* Em Produção Agora */}
+        <div className="p-3 rounded border border-fuchsia-700/60 bg-fuchsia-950/40 text-left">
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 mb-1">
+            <span>Em Produção</span>
+            {metricas.emProducao > 0 && (
+              <span className="text-[9px] font-black bg-fuchsia-600 text-white px-1.5 rounded uppercase animate-pulse">
+                RODANDO
+              </span>
+            )}
+          </div>
+          <div className="text-2xl font-mono font-black text-fuchsia-200">{metricas.emProducao}</div>
+          <div className="text-[9px] text-fuchsia-300/70 font-mono mt-0.5">Nas Envasadoras</div>
+        </div>
+
+        {/* Concluídos */}
+        <button
+          onClick={() => setFiltroStatus('concluidos')}
+          className={`p-3 rounded border text-left transition-all cursor-pointer ${
+            filtroStatus === 'concluidos'
+              ? 'bg-emerald-950/80 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400'
+              : 'bg-[#181119] border-emerald-900/30 hover:border-emerald-600/60 text-white'
+          }`}
+        >
+          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 mb-1">
+            Concluídos
+          </div>
+          <div className="text-2xl font-mono font-black text-emerald-300">{metricas.concluidos}</div>
+          <div className="text-[9px] text-emerald-400/70 font-mono mt-0.5">Baixados / Finalizados</div>
+        </button>
+      </div>
+
+      {/* Barra de Filtros e Busca */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#161616] p-3 rounded border border-white/10">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <button
+            onClick={() => setFiltroStatus('pendentes')}
+            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
+              filtroStatus === 'pendentes'
+                ? 'bg-fuchsia-600 text-white shadow'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Pendentes ({metricas.totalAtivos})
+          </button>
+          <button
+            onClick={() => setFiltroStatus('hoje')}
+            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
+              filtroStatus === 'hoje'
+                ? 'bg-red-600 text-white shadow'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Vencem Hoje ({metricas.hoje})
+          </button>
+          <button
+            onClick={() => setFiltroStatus('concluidos')}
+            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
+              filtroStatus === 'concluidos'
+                ? 'bg-emerald-600 text-white shadow'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Concluídos ({metricas.concluidos})
+          </button>
+          <button
+            onClick={() => setFiltroStatus('todos')}
+            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
+              filtroStatus === 'todos'
+                ? 'bg-white/20 text-white shadow'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Todos ({lotesBloqueio.length})
+          </button>
+        </div>
+
+        <div className="relative flex-1 sm:max-w-xs">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-white/40" />
+          <input
+            type="text"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            placeholder="Buscar por lote, produto, cliente..."
+            className="w-full bg-black/60 border border-white/20 text-white text-xs pl-9 pr-3 py-1.5 rounded focus:outline-none focus:border-fuchsia-500 font-mono"
+          />
+        </div>
+      </div>
+
+      {/* Lista de Lotes de Bloqueio */}
+      {lotesOrdenados.length === 0 ? (
+        <div className="bg-[#161616] border border-white/10 rounded-lg p-10 text-center space-y-3">
+          <div className="w-12 h-12 rounded-full bg-fuchsia-950 border border-fuchsia-600/40 text-fuchsia-400 mx-auto flex items-center justify-center">
+            <ShieldAlert className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm font-bold uppercase tracking-wider text-white">
+            Nenhum Lote de Bloqueio Encontrado
+          </h3>
+          <p className="text-xs text-white/50 max-w-md mx-auto">
+            {busca
+              ? 'Nenhum resultado para os termos da busca.'
+              : 'Não há lotes de bloqueio cadastrados com este filtro. Cadastre os lotes já vendidos para alertar a produção com prioridade máxima.'}
+          </p>
+          <button
+            onClick={() => {
+              limparFormulario();
+              setModalCadastroAberto(true);
+            }}
+            className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold uppercase tracking-wider px-4 py-2 rounded inline-flex items-center gap-2 cursor-pointer shadow"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Cadastrar Primeiro Lote</span>
+          </button>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+          {lotesOrdenados.map((lote) => {
+            const ehHoje = lote.prazo === 'hoje';
+            const ehSemana = lote.prazo === 'semana';
+            const emAndamento = lote.status === 'em_andamento';
+            const concluido = lote.status === 'concluido';
+
+            return (
+              <div
+                key={lote.id}
+                id={`card-bloqueio-${lote.id}`}
+                className={`rounded-lg p-4 border transition-all flex flex-col justify-between relative shadow-lg ${
+                  concluido
+                    ? 'bg-[#141414] border-white/10 opacity-75'
+                    : emAndamento
+                    ? 'bg-gradient-to-b from-[#2d0f36] via-[#1f0b26] to-[#140817] border-2 border-fuchsia-400 shadow-[0_0_20px_rgba(217,70,239,0.3)] ring-1 ring-fuchsia-300'
+                    : ehHoje
+                    ? 'bg-gradient-to-b from-[#2b0d1a] via-[#1a0c14] to-[#12080e] border-2 border-red-500/80 shadow-[0_0_18px_rgba(239,68,68,0.25)]'
+                    : 'bg-gradient-to-b from-[#1c1022] via-[#150c1a] to-[#100814] border border-fuchsia-800/60 hover:border-fuchsia-500/80'
+                }`}
+              >
+                <div>
+                  {/* Topo do Card: Número do Lote e Selos de Urgência */}
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-sm sm:text-base font-black text-white tracking-wider">
+                          LOTE: {lote.numeroLote}
+                        </span>
+                        {emAndamento && (
+                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded bg-fuchsia-600 text-white animate-pulse shadow">
+                            RODANDO
+                          </span>
+                        )}
+                      </div>
+                      {lote.codigoProduto && (
+                        <span className="text-[10px] font-mono text-fuchsia-300/70 block">
+                          Cód: {lote.codigoProduto}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Selo de Prazo / Urgência */}
+                    {concluido ? (
+                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
+                        <Check className="w-3 h-3" />
+                        <span>Concluído</span>
+                      </span>
+                    ) : ehHoje ? (
+                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-red-600 text-white animate-pulse border border-red-400 shadow-[0_0_10px_rgba(239,68,68,0.7)] flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                        <span>VENCE HOJE</span>
+                      </span>
+                    ) : ehSemana ? (
+                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40">
+                        ESSA SEMANA
+                      </span>
+                    ) : (
+                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/40">
+                        ESSE MÊS
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Nome do Produto */}
+                  <div
+                    className="text-xs sm:text-sm font-bold text-white mb-2 leading-tight"
+                    title={lote.produto}
+                  >
+                    {lote.produto}
+                  </div>
+
+                  {/* Detalhes de Máquina, Setor e Quantidade */}
+                  <div className="grid grid-cols-2 gap-2 text-[11px] font-mono mb-3 bg-black/40 p-2 rounded border border-white/5">
+                    <div>
+                      <span className="text-white/40 block text-[9px] uppercase">Envasadora / Setor:</span>
+                      <span className="font-bold text-fuchsia-200 truncate block">
+                        {lote.maquina && lote.maquina !== 'Todas' ? lote.maquina : 'Qualquer Máquina'}
+                        {lote.setor && (
+                          <span className="text-white/50 text-[10px]">
+                            {' '}• {lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos'}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-white/40 block text-[9px] uppercase">Quantidade:</span>
+                      <span className="font-bold text-white">
+                        {lote.quantidade || 'Lote Completo'}
+                      </span>
+                    </div>
+
+                    {lote.cliente && (
+                      <div className="col-span-2">
+                        <span className="text-white/40 block text-[9px] uppercase">Cliente / Pedido:</span>
+                        <span className="text-fuchsia-300 font-semibold truncate block">
+                          {lote.cliente}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Alerta de Máquina em Uso atual */}
+                  {emAndamento && (
+                    <div className="text-[11px] bg-fuchsia-950/90 border border-fuchsia-500/70 text-fuchsia-200 font-bold p-2 rounded mb-3 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400 animate-pulse" />
+                        <span>Em processamento no chão de fábrica</span>
+                      </span>
+                      {aoIrParaDashboard && (
+                        <button
+                          onClick={aoIrParaDashboard}
+                          className="text-[10px] uppercase font-mono text-white underline hover:text-[#FFD100]"
+                        >
+                          Ver no Painel
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Observações */}
+                  {lote.observacoes && (
+                    <p className="text-[11px] text-white/50 italic mb-3 bg-white/5 p-1.5 rounded">
+                      "{lote.observacoes}"
+                    </p>
+                  )}
+
+                  {concluido && lote.finalizadoEm && (
+                    <p className="text-[10px] font-mono text-emerald-400 mb-2">
+                      Finalizado em: {new Date(lote.finalizadoEm).toLocaleString('pt-BR')}
+                    </p>
+                  )}
+                </div>
+
+                {/* Ações do Card */}
+                <div className="pt-2 border-t border-white/10 flex items-center justify-between gap-2 mt-2">
+                  <div className="flex items-center gap-1">
+                    {!concluido ? (
+                      <button
+                        id={`btn-concluir-bloqueio-${lote.id}`}
+                        onClick={() => concluirLoteBloqueio(lote.id)}
+                        title="Dar baixa manual no lote (Marcar como concluído)"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors shadow"
+                      >
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Dar Baixa</span>
+                      </button>
+                    ) : (
+                      <button
+                        id={`btn-reabrir-bloqueio-${lote.id}`}
+                        onClick={() =>
+                          atualizarLoteBloqueio(lote.id, {
+                            status: 'pendente',
+                            finalizadoEm: undefined,
+                            maquinaEmUsoId: undefined,
+                          })
+                        }
+                        title="Reabrir lote de bloqueio pendente"
+                        className="bg-white/10 hover:bg-white/20 text-white/80 text-[11px] font-bold uppercase tracking-wider px-2 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        <span>Reabrir</span>
+                      </button>
+                    )}
+
+                    {!concluido && !emAndamento && aoIrParaDashboard && (
+                      <button
+                        onClick={aoIrParaDashboard}
+                        title="Ir para o Dashboard para iniciar este lote na máquina"
+                        className="bg-fuchsia-700 hover:bg-fuchsia-600 text-white text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <Play className="w-3 h-3 fill-white" />
+                        <span>Produzir</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <button
+                    id={`btn-excluir-bloqueio-${lote.id}`}
+                    onClick={() => setLoteParaExcluir(lote.id)}
+                    title="Excluir cadastro deste lote de bloqueio"
+                    className="text-red-400/60 hover:text-red-400 p-1.5 rounded hover:bg-red-500/10 transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Modal de Cadastro de Lote de Bloqueio */}
+      {modalCadastroAberto && (
+        <div
+          id="modal-cadastro-bloqueio-overlay"
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto"
+          onClick={() => setModalCadastroAberto(false)}
+        >
+          <div
+            id="modal-cadastro-bloqueio-container"
+            className="bg-[#1c1322] border-2 border-fuchsia-500 rounded-lg w-full max-w-xl shadow-[0_0_35px_rgba(217,70,239,0.3)] overflow-hidden text-white my-6 flex flex-col max-h-[92vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Topo do Modal */}
+            <div className="bg-[#140b19] px-4 py-3.5 border-b border-fuchsia-900/60 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 rounded bg-fuchsia-600 text-white flex items-center justify-center shadow">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base uppercase tracking-wider text-white">
+                    Cadastrar Lote de Bloqueio
+                  </h3>
+                  <p className="text-[10px] text-fuchsia-300/70 font-mono">
+                    Lote já vendido • Prioridade Máxima no Chão de Fábrica
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setModalCadastroAberto(false)}
+                className="p-1 text-white/40 hover:text-white rounded hover:bg-white/10"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Formulário */}
+            <form onSubmit={handleSalvarLote} className="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+              {/* Seleção rápida ou digitação de produto */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 mb-1 flex items-center gap-1.5">
+                  <Layers className="w-3 h-3 text-fuchsia-400" />
+                  <span>Produto</span>
+                  <span className="text-red-400 font-bold">*</span>
+                </label>
+
+                {/* Campo de Busca de Produtos Cadastrados */}
+                <div className="space-y-1.5">
+                  <input
+                    type="text"
+                    value={buscaProdutoModal}
+                    onChange={(e) => setBuscaProdutoModal(e.target.value)}
+                    placeholder="Pesquisar produto pelo catálogo da fábrica (ex: Bepantriz, Aciclovir)..."
+                    className="w-full bg-black/60 border border-fuchsia-900/80 text-white text-xs px-3 py-1.5 rounded focus:outline-none focus:border-fuchsia-400"
+                  />
+
+                  {/* Pílulas de sugestão rápida */}
+                  {produtosSugeridosModal.length > 0 && buscaProdutoModal && (
+                    <div className="max-h-32 overflow-y-auto bg-black/80 border border-fuchsia-800/60 rounded p-1 space-y-0.5">
+                      {produtosSugeridosModal.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => selecionarProdutoModal(p)}
+                          className="w-full text-left px-2 py-1 text-xs text-white/90 hover:bg-fuchsia-900/60 rounded flex items-center justify-between"
+                        >
+                          <span className="font-bold truncate">{p.nome}</span>
+                          <span className="text-[10px] font-mono text-fuchsia-400 shrink-0 ml-2">
+                            {p.codigo || p.setor}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Nome do Produto Definido */}
+                  <input
+                    type="text"
+                    value={produtoNome}
+                    onChange={(e) => setProdutoNome(e.target.value)}
+                    placeholder="Nome completo do produto..."
+                    required
+                    className="w-full bg-black/60 border border-white/20 text-white font-bold text-xs sm:text-sm px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
+                  />
+                </div>
+              </div>
+
+              {/* Número do Lote e Código */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 mb-1 flex items-center gap-1.5">
+                    <Hash className="w-3 h-3 text-fuchsia-400" />
+                    <span>Número do Lote</span>
+                    <span className="text-red-400 font-bold">*</span>
+                  </label>
+                  <input
+                    id="input-cadastrar-numero-lote"
+                    type="text"
+                    value={numeroLote}
+                    onChange={(e) => setNumeroLote(e.target.value)}
+                    placeholder="Ex: 100031-L01, 2026-B08..."
+                    required
+                    className="w-full bg-black/60 border border-fuchsia-500 text-fuchsia-200 font-mono text-sm font-black px-3 py-2 rounded focus:outline-none focus:ring-1 focus:ring-fuchsia-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1">
+                    Código do Produto (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={codigoProduto}
+                    onChange={(e) => setCodigoProduto(e.target.value)}
+                    placeholder="Ex: 100031, 100003..."
+                    className="w-full bg-black/60 border border-white/20 text-white font-mono text-xs px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
+                  />
+                </div>
+              </div>
+
+              {/* Prazo / Data Limite (Hoje, Essa Semana, Esse Mês) */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 mb-1.5 flex items-center gap-1.5">
+                  <Clock className="w-3 h-3 text-fuchsia-400" />
+                  <span>Prazo Limite para Produção</span>
+                  <span className="text-red-400 font-bold">*</span>
+                </label>
+
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPrazo('hoje')}
+                    className={`py-2 px-2 rounded border text-center font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                      prazo === 'hoje'
+                        ? 'bg-red-600 border-red-400 text-white shadow-[0_0_12px_rgba(239,68,68,0.5)] scale-[1.02]'
+                        : 'bg-black/60 border-white/10 text-white/60 hover:text-white hover:border-red-900'
+                    }`}
+                  >
+                    <div className="flex items-center justify-center gap-1">
+                      <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                      <span>Hoje</span>
+                    </div>
+                    <span className="text-[9px] block font-mono font-normal opacity-80 mt-0.5">
+                      Máxima Urgência
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPrazo('semana')}
+                    className={`py-2 px-2 rounded border text-center font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                      prazo === 'semana'
+                        ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_12px_rgba(245,158,11,0.5)] scale-[1.02]'
+                        : 'bg-black/60 border-white/10 text-white/60 hover:text-white hover:border-amber-900'
+                    }`}
+                  >
+                    <span>Essa Semana</span>
+                    <span className="text-[9px] block font-mono font-normal opacity-80 mt-0.5">
+                      Prioridade Alta
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setPrazo('mes')}
+                    className={`py-2 px-2 rounded border text-center font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
+                      prazo === 'mes'
+                        ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] scale-[1.02]'
+                        : 'bg-black/60 border-white/10 text-white/60 hover:text-white hover:border-blue-900'
+                    }`}
+                  >
+                    <span>Esse Mês</span>
+                    <span className="text-[9px] block font-mono font-normal opacity-80 mt-0.5">
+                      Planejado
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Máquina e Setor */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1">
+                    Máquina / Envasadora
+                  </label>
+                  <select
+                    value={maquinaDestino}
+                    onChange={(e) => setMaquinaDestino(e.target.value)}
+                    className="w-full bg-black/60 border border-white/20 text-white text-xs font-bold px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
+                  >
+                    <option value="Todas">Qualquer Máquina Compatível</option>
+                    {maquinas.map((m) => (
+                      <option key={m.id} value={m.nome}>
+                        {m.nome} ({m.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1">
+                    Setor da Fábrica
+                  </label>
+                  <select
+                    value={setorDestino}
+                    onChange={(e) => setSetorDestino(e.target.value as 'todos' | Setor)}
+                    className="w-full bg-black/60 border border-white/20 text-white text-xs font-bold px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
+                  >
+                    <option value="todos">Todos os Setores</option>
+                    <option value="liquidos">Setor Líquidos</option>
+                    <option value="semissolidos">Setor Semissólidos</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Quantidade e Cliente/Pedido */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1">
+                    Quantidade Prevista (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={quantidade}
+                    onChange={(e) => setQuantidade(e.target.value)}
+                    placeholder="Ex: 50.000 bisnagas, 120 caixas..."
+                    className="w-full bg-black/60 border border-white/20 text-white text-xs px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1">
+                    Cliente / Pedido de Venda (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={cliente}
+                    onChange={(e) => setCliente(e.target.value)}
+                    placeholder="Ex: Raia Drogasil - Pedido 9482..."
+                    className="w-full bg-black/60 border border-white/20 text-white text-xs px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
+                  />
+                </div>
+              </div>
+
+              {/* Observações */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1">
+                  Observações para a Produção (Opcional)
+                </label>
+                <textarea
+                  value={observacoes}
+                  onChange={(e) => setObservacoes(e.target.value)}
+                  rows={2}
+                  placeholder="Instruções de prioridade ou notas de expedição..."
+                  className="w-full bg-black/60 border border-white/20 text-white text-xs px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400 resize-none"
+                />
+              </div>
+
+              {/* Rodapé de Ações do Modal */}
+              <div className="pt-3 border-t border-fuchsia-900/60 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModalCadastroAberto(false)}
+                  className="px-4 py-2 rounded text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white hover:bg-white/5 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={salvando}
+                  className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold uppercase tracking-wider px-5 py-2 rounded shadow-[0_0_15px_rgba(217,70,239,0.5)] cursor-pointer disabled:opacity-50"
+                >
+                  {salvando ? 'Cadastrando...' : 'Salvar Lote de Bloqueio'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmação de Exclusão */}
+      {loteParaExcluir && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setLoteParaExcluir(null)}
+        >
+          <div
+            className="bg-[#1c1322] border border-red-500/80 rounded-lg p-5 max-w-sm w-full text-white space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2.5 text-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              <h4 className="font-bold text-sm uppercase tracking-wider">Confirmar Exclusão</h4>
+            </div>
+            <p className="text-xs text-white/70">
+              Deseja realmente remover este lote de bloqueio? Esta ação não pode ser desfeita.
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+              <button
+                onClick={() => setLoteParaExcluir(null)}
+                className="px-3 py-1.5 text-xs text-white/60 hover:text-white"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => confirmarExcluirLote(loteParaExcluir)}
+                className="bg-red-600 hover:bg-red-500 text-white text-xs font-bold px-3 py-1.5 rounded"
+              >
+                Excluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
