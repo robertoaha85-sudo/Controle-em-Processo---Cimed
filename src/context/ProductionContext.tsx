@@ -1,6 +1,13 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
 import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, MembroEquipe, LoteBloqueio, StatusBloqueio } from '../types';
-import { calcularPrevisaoTermino, obterTempoProdutoParaMaquina, PRODUTOS_INICIAIS, MAQUINAS_INICIAIS, EQUIPES_INICIAIS } from '../initialData';
+import {
+  calcularPrevisaoTermino,
+  obterTempoProdutoParaMaquina,
+  loteBloqueioCompativelComMaquina,
+  PRODUTOS_INICIAIS,
+  MAQUINAS_INICIAIS,
+  EQUIPES_INICIAIS,
+} from '../initialData';
 import { tocarAlarmeProblemaMecanico, tocarSomSucesso, isSoundEnabled, setSoundEnabled } from '../utils/audio';
 import {
   ouvirLotesBloqueio,
@@ -211,44 +218,49 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     return () => cancelarInscricao();
   }, []);
 
-  // Verifica se um produto e/ou número de lote corresponde a um Lote de Bloqueio cadastrado e pendente/ativo
+  // Verifica se um número de lote (e produto opcional) corresponde a um Lote de Bloqueio cadastrado e pendente
+  // Exige correspondência estrita para evitar ações automáticas indesejadas
   const verificarLoteBloqueio = useCallback(
     (produtoNomeOuCodigo: string, numeroLote?: string, maquinaNome?: string): LoteBloqueio | undefined => {
-      if (!produtoNomeOuCodigo && !numeroLote) return undefined;
+      if (!numeroLote || !numeroLote.trim()) return undefined;
+      const loteNorm = numeroLote.toLowerCase().trim();
       const prodNorm = (produtoNomeOuCodigo || '').toLowerCase().trim();
-      const loteNorm = (numeroLote || '').toLowerCase().trim();
       const maqNorm = (maquinaNome || '').toLowerCase().trim();
 
       return lotesBloqueio.find((b) => {
         if (b.status === 'concluido' || b.status === 'cancelado') return false;
 
-        // Se informou número do lote e coincide exatamente
-        if (loteNorm && b.numeroLote && b.numeroLote.toLowerCase().trim() === loteNorm) {
-          return true;
+        // Número do lote obrigatório e idêntico
+        const coincideLote = Boolean(b.numeroLote && b.numeroLote.toLowerCase().trim() === loteNorm);
+        if (!coincideLote) return false;
+
+        // Se informou produto, verifica compatibilidade
+        if (prodNorm && b.produto) {
+          const bProdNorm = b.produto.toLowerCase().trim();
+          const coincideProd =
+            (b.codigoProduto && b.codigoProduto.toLowerCase().trim() === prodNorm) ||
+            bProdNorm === prodNorm ||
+            bProdNorm.includes(prodNorm) ||
+            prodNorm.includes(bProdNorm);
+          if (!coincideProd) return false;
         }
 
-        // Se coincide pelo código ou nome do produto
-        const matchProd =
-          (b.codigoProduto && b.codigoProduto.toLowerCase().trim() === prodNorm) ||
-          b.produto.toLowerCase().trim() === prodNorm ||
-          b.produto.toLowerCase().includes(prodNorm) ||
-          (prodNorm && prodNorm.includes(b.produto.toLowerCase().trim()));
+        // Se a máquina foi informada, valida compatibilidade técnica rigorosa
+        if (maqNorm) {
+          const maqObj = maquinas.find((m) => {
+            const mNorm = m.nome.toLowerCase().trim();
+            return mNorm === maqNorm || maqNorm.includes(mNorm) || mNorm.includes(maqNorm);
+          }) || { nome: maquinaNome || maqNorm };
 
-        if (matchProd) {
-          // Se a máquina foi informada e o lote de bloqueio restringe máquina
-          if (maqNorm && b.maquina && b.maquina.toLowerCase() !== 'todas') {
-            if (b.maquina.toLowerCase().trim() === maqNorm || maqNorm.includes(b.maquina.toLowerCase().trim())) {
-              return true;
-            }
-          } else {
-            return true;
+          if (!loteBloqueioCompativelComMaquina(b, maqObj, produtos)) {
+            return false;
           }
         }
 
-        return false;
+        return true;
       });
     },
-    [lotesBloqueio]
+    [lotesBloqueio, maquinas, produtos]
   );
 
   // Determina status efetivo (calcula 'atrasado' se ultrapassou a previsão)

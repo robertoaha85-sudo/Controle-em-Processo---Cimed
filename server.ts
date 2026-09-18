@@ -36,21 +36,12 @@ function carregarDados(): StoreData {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
 
-      // Garante que o catálogo contenha os produtos com código e vínculos por máquina atualizados (Líquidos e Semissólidos)
-      const temSemissolidosAtualizados =
-        Array.isArray(parsed.produtos) &&
-        parsed.produtos.some((p: any) => p.codigo === '100003' && p.setor === 'semissolidos');
-
       const data: StoreData = {
         maquinas: parsed.maquinas || MAQUINAS_INICIAIS,
-        produtos: temSemissolidosAtualizados ? parsed.produtos : PRODUTOS_INICIAIS,
+        produtos: Array.isArray(parsed.produtos) ? parsed.produtos : PRODUTOS_INICIAIS,
         historico: parsed.historico || [],
         equipes: parsed.equipes || EQUIPES_INICIAIS,
       };
-
-      if (!temSemissolidosAtualizados) {
-        salvarDados(data);
-      }
       return data;
     }
   } catch (err) {

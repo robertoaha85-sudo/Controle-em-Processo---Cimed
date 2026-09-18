@@ -14,60 +14,28 @@ import { LoteBloqueio } from '../types';
 const LOCAL_STORAGE_KEY = 'cimed_lotes_bloqueio_v1';
 const COLLECTION_NAME = 'lotesBloqueio';
 
-// Lotes de exemplo iniciais para caso a coleção esteja vazia na primeira inicialização
-export const LOTES_BLOQUEIO_EXEMPLO: Omit<LoteBloqueio, 'id'>[] = [
-  {
-    produto: 'BABYMED ROSA POM BG 45 G',
-    codigoProduto: '100027',
-    numeroLote: 'L24091',
-    maquina: 'Norden 3',
-    setor: 'semissolidos',
-    prazo: 'hoje',
-    dataLimite: new Date().toISOString().split('T')[0],
-    status: 'pendente',
-    observacoes: 'Pedido urgente faturado - Expedição prioritária CD Pouso Alegre',
-    criadoEm: new Date(Date.now() - 3600000).toISOString(),
-  },
-  {
-    produto: 'ACICLOVIR 50MG/G CREM BG 10G',
-    codigoProduto: '100003',
-    numeroLote: 'L24089',
-    maquina: 'Norden 2',
-    setor: 'semissolidos',
-    prazo: 'hoje',
-    dataLimite: new Date().toISOString().split('T')[0],
-    status: 'pendente',
-    observacoes: 'Rede de farmácias com estoque zero - prioridade máxima de expedição',
-    criadoEm: new Date(Date.now() - 7200000).toISOString(),
-  },
-  {
-    produto: 'DIPIRONA SODICA 500MG/ML SOL ORAL GOTAS 20ML',
-    codigoProduto: '100096',
-    numeroLote: 'L24095',
-    maquina: 'Gotas',
-    setor: 'liquidos',
-    prazo: 'semana',
-    dataLimite: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
-    status: 'pendente',
-    observacoes: 'Contrato hospitalar com prazo limite na sexta-feira',
-    criadoEm: new Date(Date.now() - 14400000).toISOString(),
-  },
-];
-
 export function obterLotesBloqueioLocais(): LoteBloqueio[] {
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed)) {
+        // Remove quaisquer dados de teste/exemplos antigos
+        const limpos = parsed.filter(
+          (item: LoteBloqueio) =>
+            item &&
+            !String(item.id).startsWith('local-bloqueio-') &&
+            item.numeroLote !== 'L24091' &&
+            item.numeroLote !== 'L24089' &&
+            item.numeroLote !== 'L24095'
+        );
+        return limpos;
+      }
     }
   } catch (e) {
     console.warn('Erro ao ler lotes de bloqueio do localStorage:', e);
   }
-  return LOTES_BLOQUEIO_EXEMPLO.map((item, idx) => ({
-    ...item,
-    id: `local-bloqueio-${idx + 1}`,
-  }));
+  return [];
 }
 
 export function salvarLotesBloqueioLocais(lotes: LoteBloqueio[]) {
@@ -81,6 +49,7 @@ export function salvarLotesBloqueioLocais(lotes: LoteBloqueio[]) {
 /**
  * Escuta em tempo real os lotes de bloqueio no Firestore.
  * Conforme especificado, sincroniza com a coleção lotesBloqueio.
+ * NUNCA adiciona lotes automaticamente: somente reflete ações do usuário.
  */
 export function ouvirLotesBloqueio(
   onUpdate: (lotes: LoteBloqueio[]) => void,
@@ -97,6 +66,15 @@ export function ouvirLotesBloqueio(
           const lotes: LoteBloqueio[] = [];
           snapshot.forEach((docSnap) => {
             const data = docSnap.data();
+            // Purga quaisquer exemplos de demonstração gerados anteriormente
+            if (
+              data.numeroLote === 'L24091' ||
+              data.numeroLote === 'L24089' ||
+              data.numeroLote === 'L24095'
+            ) {
+              deleteDoc(docSnap.ref).catch(() => {});
+              return;
+            }
             lotes.push({
               id: docSnap.id,
               produto: data.produto || '',
@@ -117,9 +95,9 @@ export function ouvirLotesBloqueio(
           salvarLotesBloqueioLocais(lotes);
           onUpdate(lotes);
         } else {
-          // Coleção vazia: carrega locais ou iniciais
-          const locais = obterLotesBloqueioLocais();
-          onUpdate(locais);
+          // Coleção vazia: nenhum lote automático
+          salvarLotesBloqueioLocais([]);
+          onUpdate([]);
         }
       },
       (error) => {

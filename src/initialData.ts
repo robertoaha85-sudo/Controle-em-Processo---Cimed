@@ -1664,3 +1664,121 @@ export function produtoVinculadoAMaquina(
 
   return false;
 }
+
+/**
+ * Localiza um produto no catálogo a partir de dados parciais de lote (código ou nome)
+ */
+export function encontrarProdutoDoLote(
+  lote: { produto?: string; codigoProduto?: string },
+  produtos: Produto[]
+): Produto | undefined {
+  if (!lote || !produtos) return undefined;
+
+  // 1. Busca prioritária por código do produto
+  if (lote.codigoProduto && lote.codigoProduto.trim()) {
+    const codLimpo = lote.codigoProduto.trim().toLowerCase();
+    const pPorCodigo = produtos.find(
+      (p) => p.codigo && p.codigo.trim().toLowerCase() === codLimpo
+    );
+    if (pPorCodigo) return pPorCodigo;
+  }
+
+  // 2. Busca por nome do produto
+  if (lote.produto && lote.produto.trim()) {
+    const nomeLimpo = lote.produto.trim().toLowerCase();
+
+    // Correspondência exata
+    const pExato = produtos.find((p) => p.nome.trim().toLowerCase() === nomeLimpo);
+    if (pExato) return pExato;
+
+    // Correspondência por início
+    const pInicia = produtos.find(
+      (p) =>
+        p.nome.trim().toLowerCase().startsWith(nomeLimpo) ||
+        nomeLimpo.startsWith(p.nome.trim().toLowerCase())
+    );
+    if (pInicia) return pInicia;
+
+    // Correspondência por contenção
+    const pContem = produtos.find((p) => {
+      const pNome = p.nome.trim().toLowerCase();
+      return pNome.includes(nomeLimpo) || nomeLimpo.includes(pNome);
+    });
+    if (pContem) return pContem;
+
+    // Correspondência por tokens principais (>= 3 letras)
+    const tokensLote = nomeLimpo.split(/[\s\-_/]+/).filter((t) => t.length >= 3);
+    if (tokensLote.length > 0) {
+      const pPorTodosTokens = produtos.find((p) => {
+        const pNome = p.nome.toLowerCase();
+        return tokensLote.every((t) => pNome.includes(t));
+      });
+      if (pPorTodosTokens) return pPorTodosTokens;
+
+      const pPorAlgumToken = produtos.find((p) => {
+        const pNome = p.nome.toLowerCase();
+        return tokensLote.some((t) => pNome.includes(t));
+      });
+      if (pPorAlgumToken) return pPorAlgumToken;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Retorna as máquinas compatíveis com um determinado produto
+ */
+export function obterMaquinasCompativeisComProduto(
+  produto: Produto,
+  maquinas: Array<{ id?: string; nome: string; linhaPadrao?: string; setor?: Setor }>
+) {
+  if (!produto || !maquinas) return [];
+  return maquinas.filter((m) => produtoVinculadoAMaquina(produto, m));
+}
+
+/**
+ * Verifica com rigor técnico se um Lote de Bloqueio é compatível com uma máquina específica.
+ * Quando o lote foi cadastrado para 'Todas' (Qualquer Máquina Compatível),
+ * consulta o produto no catálogo e valida os vínculos técnicos dele com a máquina.
+ */
+export function loteBloqueioCompativelComMaquina(
+  lote: { produto?: string; codigoProduto?: string; maquina?: string; setor?: Setor },
+  maquina: { id?: string; nome: string; linhaPadrao?: string; setor?: Setor },
+  produtos: Produto[]
+): boolean {
+  if (!maquina || !lote) return false;
+
+  // 1. O setor da máquina deve ser compatível com o setor do lote
+  if (lote.setor && maquina.setor && lote.setor !== maquina.setor) {
+    return false;
+  }
+
+  const maqNomeNorm = maquina.nome.toLowerCase().trim();
+
+  // 2. Se o lote especificou uma máquina concreta (diferente de 'Todas' ou genéricos)
+  const maqDefinida = lote.maquina && lote.maquina.trim().toLowerCase();
+  if (
+    maqDefinida &&
+    maqDefinida !== 'todas' &&
+    maqDefinida !== 'qualquer máquina compatível' &&
+    maqDefinida !== 'qualquer máquina'
+  ) {
+    const variacoesLote = gerarVariacoesMaquina(maqDefinida);
+    const variacoesMaq = new Set([
+      ...gerarVariacoesMaquina(maquina.nome),
+      ...gerarVariacoesMaquina(maquina.linhaPadrao),
+      ...gerarVariacoesMaquina(maquina.id),
+    ]);
+    return variacoesLote.some((v) => variacoesMaq.has(v)) || maqDefinida === maqNomeNorm;
+  }
+
+  // 3. Se está configurado para "Qualquer Máquina Compatível", verifica os vínculos técnicos do produto
+  const produto = encontrarProdutoDoLote(lote, produtos);
+  if (produto) {
+    return produtoVinculadoAMaquina(produto, maquina);
+  }
+
+  // Fallback: se o produto não foi localizado no catálogo conhecido, restringe pelo setor
+  return !lote.setor || !maquina.setor || lote.setor === maquina.setor;
+}

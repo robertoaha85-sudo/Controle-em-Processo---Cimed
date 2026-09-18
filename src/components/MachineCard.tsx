@@ -109,8 +109,8 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
 
   // Identifica se esta máquina está processando um Lote de Bloqueio (prioridade máxima)
   const isBloqueioAtivo = Boolean(
-    maquina.isBloqueio ||
-      (temLoteAtivo &&
+    temLoteAtivo &&
+      (maquina.isBloqueio ||
         lotesBloqueio.some(
           (b) =>
             b.status === 'em_andamento' &&

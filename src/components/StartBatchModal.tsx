@@ -7,6 +7,7 @@ import {
   calcularPrevisaoTermino,
   obterTempoProdutoParaMaquina,
   produtoVinculadoAMaquina,
+  loteBloqueioCompativelComMaquina,
 } from '../initialData';
 
 interface StartBatchModalProps {
@@ -44,20 +45,15 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
     return () => clearTimeout(timer);
   }, []);
 
-  // Lotes de bloqueio pendentes compatíveis com esta máquina ou setor
+  // Lotes de bloqueio pendentes estritamente compatíveis com esta máquina
   const bloqueiosCompativeis = useMemo(() => {
     if (!maquina) return [];
-    const maqNomeNorm = maquina.nome.toLowerCase().trim();
     return lotesBloqueio.filter((b) => {
       if (b.status === 'concluido' || b.status === 'cancelado') return false;
       if (b.status === 'em_andamento') return false;
-      if (b.maquina && b.maquina.toLowerCase() !== 'todas') {
-        const bMaq = b.maquina.toLowerCase().trim();
-        return bMaq === maqNomeNorm || maqNomeNorm.includes(bMaq) || bMaq.includes(maqNomeNorm);
-      }
-      return !b.setor || b.setor === maquina.setor;
+      return loteBloqueioCompativelComMaquina(b, maquina, produtos);
     });
-  }, [maquina, lotesBloqueio]);
+  }, [maquina, lotesBloqueio, produtos]);
 
   // Produtos filtrados por setor da máquina e busca (código ou nome)
   const produtosFiltrados = useMemo(() => {
@@ -104,21 +100,30 @@ export const StartBatchModal: React.FC<StartBatchModalProps> = ({ maquina, aoFec
     return produtos.find((p) => p.id === produtoSelecionadoId);
   }, [produtos, produtoSelecionadoId]);
 
-  // Detecta automaticamente se o lote ou produto digitado corresponde a um Lote de Bloqueio cadastrado
+  // Detecta se o número de lote digitado pelo usuário corresponde a um Lote de Bloqueio cadastrado
   const bloqueioDetectado = useMemo(() => {
+    if (!maquina) return undefined;
+
     if (bloqueioIdSelecionado) {
       const achado = lotesBloqueio.find((b) => b.id === bloqueioIdSelecionado);
-      if (achado) return achado;
+      if (achado && loteBloqueioCompativelComMaquina(achado, maquina, produtos)) {
+        return achado;
+      }
     }
     const loteLimpo = numeroLote.trim();
-    if (!produtoSelecionado && !loteLimpo) return undefined;
+    // Exige estritamente o número do lote digitado para evitar falso positivo automático
+    if (!loteLimpo) return undefined;
 
-    return (
-      (loteLimpo ? verificarLoteBloqueio('', loteLimpo, maquina?.nome) : undefined) ||
-      (produtoSelecionado ? verificarLoteBloqueio(produtoSelecionado.nome, loteLimpo, maquina?.nome) : undefined) ||
-      (produtoSelecionado?.codigo ? verificarLoteBloqueio(produtoSelecionado.codigo, loteLimpo, maquina?.nome) : undefined)
+    const achado = verificarLoteBloqueio(
+      produtoSelecionado?.nome || produtoSelecionado?.codigo || '',
+      loteLimpo,
+      maquina.nome
     );
-  }, [bloqueioIdSelecionado, produtoSelecionado, numeroLote, maquina, lotesBloqueio, verificarLoteBloqueio]);
+    if (achado && loteBloqueioCompativelComMaquina(achado, maquina, produtos)) {
+      return achado;
+    }
+    return undefined;
+  }, [bloqueioIdSelecionado, produtoSelecionado, numeroLote, maquina, lotesBloqueio, produtos, verificarLoteBloqueio]);
 
   const ehLoteBloqueio = Boolean(bloqueioDetectado || forcarBloqueio);
 

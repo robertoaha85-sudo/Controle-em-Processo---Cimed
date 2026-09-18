@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Plus,
   Search,
@@ -15,10 +15,30 @@ import {
 } from 'lucide-react';
 import { Produto, Setor } from '../types';
 import { useProduction } from '../context/ProductionContext';
-import { formatarMinutosParaTexto } from '../initialData';
+import {
+  formatarMinutosParaTexto,
+  obterTempoProdutoParaMaquina,
+  produtoVinculadoAMaquina,
+} from '../initialData';
+
+// Lista exclusiva de máquinas requeridas
+const MAQUINAS_ORDEM = [
+  'Norden I',
+  'Norden II',
+  'Norden III',
+  'Norden IV',
+  'CAM',
+  'Gotas',
+  'Xarope',
+  'Externo',
+  'Epativan',
+] as const;
+
+const MAQUINAS_SEMISSOLIDOS = ['Norden I', 'Norden II', 'Norden III', 'Norden IV'] as const;
+const MAQUINAS_LIQUIDOS = ['CAM', 'Gotas', 'Xarope', 'Externo', 'Epativan'] as const;
 
 export const ProductsTab: React.FC = () => {
-  const { produtos, adicionarProduto, editarProduto, excluirProduto } = useProduction();
+  const { produtos, maquinas, adicionarProduto, editarProduto, excluirProduto } = useProduction();
 
   const [busca, setBusca] = useState('');
   const [setorFiltro, setSetorFiltro] = useState<'todos' | Setor>('todos');
@@ -39,40 +59,74 @@ export const ProductsTab: React.FC = () => {
   // Confirmação de exclusão
   const [confirmandoExcluirId, setConfirmandoExcluirId] = useState<string | null>(null);
 
-  // Lista de linhas disponíveis para filtro
+  // Lista de máquinas disponíveis para filtro (conforme especificado: Norden I, Norden II, Norden III, Norden IV, CAM, Gotas, Xarope, Externo, Epativan)
   const linhasDisponiveis = useMemo(() => {
-    const set = new Set<string>();
-    produtos.forEach((p) => set.add(p.linha));
-    return Array.from(set).sort();
-  }, [produtos]);
+    if (setorFiltro === 'semissolidos') {
+      return [...MAQUINAS_SEMISSOLIDOS];
+    }
+    if (setorFiltro === 'liquidos') {
+      return [...MAQUINAS_LIQUIDOS];
+    }
+    return [...MAQUINAS_ORDEM];
+  }, [setorFiltro]);
 
-  // Produtos filtrados
+  // Se a máquina selecionada não pertence ao setor ativo, reseta o filtro para 'todas'
+  useEffect(() => {
+    if (linhaFiltro !== 'todas' && !linhasDisponiveis.includes(linhaFiltro as any)) {
+      setLinhaFiltro('todas');
+    }
+  }, [setorFiltro, linhasDisponiveis, linhaFiltro]);
+
+  // Produtos filtrados estritamente pelas máquinas e seus respectivos produtos vinculados
   const produtosFiltrados = useMemo(() => {
     return produtos.filter((p) => {
+      // 1. Filtro por Setor
       if (setorFiltro !== 'todos' && p.setor !== setorFiltro) return false;
+
+      // 2. Filtro estrito pela Máquina selecionada (Norden I, II, III, IV, CAM, Gotas, Xarope, Externo, Epativan)
       if (linhaFiltro !== 'todas') {
-        const lf = linhaFiltro.toLowerCase();
-        const coincideLinha = p.linha.toLowerCase().includes(lf);
-        const coincideVinculo = p.vinculos?.some((v) => v.linhaOuMaquina.toLowerCase().includes(lf));
-        if (!coincideLinha && !coincideVinculo) return false;
+        const ehSemissolido = (MAQUINAS_SEMISSOLIDOS as readonly string[]).includes(linhaFiltro);
+        const maqInfo = {
+          nome: linhaFiltro,
+          linhaPadrao: linhaFiltro,
+          setor: ehSemissolido ? ('semissolidos' as Setor) : ('liquidos' as Setor),
+        };
+        if (!produtoVinculadoAMaquina(p, maqInfo)) {
+          return false;
+        }
       }
+
+      // 3. Busca por texto
       if (busca.trim()) {
-        const b = busca.toLowerCase();
+        const b = busca.toLowerCase().trim();
         const coincideVinculo = p.vinculos?.some((v) => v.linhaOuMaquina.toLowerCase().includes(b));
+        const coincideTempos = p.temposPorMaquina
+          ? Object.keys(p.temposPorMaquina).some((k) => k.toLowerCase().includes(b))
+          : false;
         return (
           (p.codigo ? p.codigo.toLowerCase().includes(b) : false) ||
           p.nome.toLowerCase().includes(b) ||
           p.linha.toLowerCase().includes(b) ||
-          coincideVinculo
+          coincideVinculo ||
+          coincideTempos
         );
       }
       return true;
     });
   }, [produtos, setorFiltro, linhaFiltro, busca]);
 
-  // Agrupamento por Linha
+  // Agrupamento por Linha / Máquina
   const gruposPorLinha = useMemo(() => {
     const map = new Map<string, Produto[]>();
+
+    if (linhaFiltro !== 'todas') {
+      const titulo = `${linhaFiltro} — ${produtosFiltrados.length} ${
+        produtosFiltrados.length === 1 ? 'produto cadastrado' : 'produtos cadastrados'
+      }`;
+      map.set(titulo, produtosFiltrados);
+      return map;
+    }
+
     produtosFiltrados.forEach((p) => {
       const grupo = `${p.setor === 'semissolidos' ? 'Semissólidos — Linha ' : 'Líquidos — '}${p.linha}`;
       if (!map.has(grupo)) {
@@ -81,7 +135,7 @@ export const ProductsTab: React.FC = () => {
       map.get(grupo)!.push(p);
     });
     return map;
-  }, [produtosFiltrados]);
+  }, [produtosFiltrados, linhaFiltro]);
 
   // Abre modal para novo produto
   const handleNovo = () => {
@@ -194,7 +248,7 @@ export const ProductsTab: React.FC = () => {
           </select>
         </div>
 
-        {/* Filtro de Linha */}
+        {/* Filtro de Linha / Máquina */}
         <div>
           <select
             id="select-filtro-linha"
@@ -202,10 +256,10 @@ export const ProductsTab: React.FC = () => {
             onChange={(e) => setLinhaFiltro(e.target.value)}
             className="w-full bg-black/60 border border-white/10 text-xs text-white px-3 py-2 rounded focus:outline-none focus:border-[#FFD100]"
           >
-            <option value="todas">Todas as Linhas</option>
+            <option value="todas">Todas as Máquinas</option>
             {linhasDisponiveis.map((linha) => (
               <option key={linha} value={linha}>
-                Linha {linha}
+                {linha}
               </option>
             ))}
           </select>
@@ -274,7 +328,9 @@ export const ProductsTab: React.FC = () => {
                 <thead className="bg-[#111111] text-white/40 text-[10px] uppercase font-bold tracking-wider border-b border-white/10">
                   <tr>
                     <th className="py-2.5 px-4">Medicamento / Produto</th>
-                    <th className="py-2.5 px-4 text-center">Tempo Padrão</th>
+                    <th className="py-2.5 px-4 text-center">
+                      {linhaFiltro !== 'todas' ? `Tempo Médio (${linhaFiltro})` : 'Tempo Padrão'}
+                    </th>
                     <th className="py-2.5 px-4 text-center">Minutos</th>
                     <th className="py-2.5 px-4 text-right">Ações</th>
                   </tr>
@@ -298,22 +354,51 @@ export const ProductsTab: React.FC = () => {
                         </div>
                         {p.vinculos && p.vinculos.length > 0 && (
                           <div className="text-[10px] text-white/60 mt-1.5 flex flex-wrap gap-1.5 font-mono">
-                            {p.vinculos.map((v, vIdx) => (
-                              <span key={vIdx} className="bg-white/10 px-1.5 py-0.5 rounded border border-white/10 text-white/80">
-                                <strong className="text-[#FFD100]">{v.linhaOuMaquina}:</strong> {formatarMinutosParaTexto(v.tempoEnvaseMinutos)}
-                              </span>
-                            ))}
+                            {p.vinculos.map((v, vIdx) => {
+                              const estaAtivo =
+                                linhaFiltro !== 'todas' &&
+                                v.linhaOuMaquina.toLowerCase().includes(linhaFiltro.toLowerCase());
+                              return (
+                                <span
+                                  key={vIdx}
+                                  className={`px-1.5 py-0.5 rounded border ${
+                                    estaAtivo
+                                      ? 'bg-[#FFD100]/20 border-[#FFD100]/50 text-[#FFD100] font-bold'
+                                      : 'bg-white/10 border-white/10 text-white/80'
+                                  }`}
+                                >
+                                  <strong className={estaAtivo ? 'text-[#FFD100]' : 'text-white/90'}>
+                                    {v.linhaOuMaquina}:
+                                  </strong>{' '}
+                                  {formatarMinutosParaTexto(v.tempoEnvaseMinutos)}
+                                </span>
+                              );
+                            })}
                           </div>
                         )}
                       </td>
                       <td className="py-2.5 px-4 text-center">
-                        <span className="inline-flex items-center gap-1 font-mono font-bold text-xs text-[#FFD100] bg-[#FFD100]/10 px-2 py-0.5 rounded border border-[#FFD100]/20">
-                          <Clock className="w-3 h-3 text-[#FFD100]" />
-                          <span>{formatarMinutosParaTexto(p.tempoEnvaseMinutos)}</span>
-                        </span>
+                        {linhaFiltro !== 'todas' ? (
+                          (() => {
+                            const tempoFiltro = obterTempoProdutoParaMaquina(p, { nome: linhaFiltro, linhaPadrao: linhaFiltro });
+                            return (
+                              <span className="inline-flex items-center gap-1 font-mono font-bold text-xs text-[#FFD100] bg-[#FFD100]/10 px-2 py-0.5 rounded border border-[#FFD100]/20">
+                                <Clock className="w-3 h-3 text-[#FFD100]" />
+                                <span>{formatarMinutosParaTexto(tempoFiltro)}</span>
+                              </span>
+                            );
+                          })()
+                        ) : (
+                          <span className="inline-flex items-center gap-1 font-mono font-bold text-xs text-[#FFD100] bg-[#FFD100]/10 px-2 py-0.5 rounded border border-[#FFD100]/20">
+                            <Clock className="w-3 h-3 text-[#FFD100]" />
+                            <span>{formatarMinutosParaTexto(p.tempoEnvaseMinutos)}</span>
+                          </span>
+                        )}
                       </td>
                       <td className="py-2.5 px-4 text-center font-mono text-[11px] text-white/40">
-                        {p.tempoEnvaseMinutos} min
+                        {linhaFiltro !== 'todas'
+                          ? `${obterTempoProdutoParaMaquina(p, { nome: linhaFiltro, linhaPadrao: linhaFiltro })} min`
+                          : `${p.tempoEnvaseMinutos} min`}
                       </td>
                       <td className="py-2.5 px-4 text-right whitespace-nowrap">
                         {confirmandoExcluirId === p.id ? (

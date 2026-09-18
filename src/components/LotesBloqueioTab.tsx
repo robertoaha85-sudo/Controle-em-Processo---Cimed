@@ -18,7 +18,12 @@ import {
   Check,
 } from 'lucide-react';
 import { useProduction } from '../context/ProductionContext';
-import { LoteBloqueio, PrazoBloqueio, Setor } from '../types';
+import { LoteBloqueio, PrazoBloqueio, Setor, Produto } from '../types';
+import {
+  encontrarProdutoDoLote,
+  produtoVinculadoAMaquina,
+  loteBloqueioCompativelComMaquina,
+} from '../initialData';
 
 interface LotesBloqueioTabProps {
   aoIrParaDashboard?: () => void;
@@ -38,7 +43,7 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
 
   // Estados de controle do formulário
   const [modalCadastroAberto, setModalCadastroAberto] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'pendentes' | 'hoje' | 'concluidos'>('pendentes');
+  const [filtroStatus, setFiltroStatus] = useState<'bloqueio' | 'em_producao' | 'concluidos'>('bloqueio');
   const [busca, setBusca] = useState('');
 
   // Campos do formulário de cadastro
@@ -69,39 +74,53 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
     ).slice(0, 10);
   }, [produtos, buscaProdutoModal]);
 
-  const selecionarProdutoModal = (p: { nome: string; codigo?: string; setor: Setor }) => {
+  // Detecção do produto e cálculo estrito de compatibilidade no modal de cadastro
+  const produtoModalDetectado = useMemo(() => {
+    return encontrarProdutoDoLote({ produto: produtoNome, codigoProduto }, produtos);
+  }, [produtoNome, codigoProduto, produtos]);
+
+  const maquinasCompativeisModal = useMemo(() => {
+    if (!produtoModalDetectado) {
+      if (setorDestino === 'todos') return maquinas;
+      return maquinas.filter((m) => m.setor === setorDestino);
+    }
+    return maquinas.filter((m) => produtoVinculadoAMaquina(produtoModalDetectado, m));
+  }, [produtoModalDetectado, maquinas, setorDestino]);
+
+  const selecionarProdutoModal = (p: Produto) => {
     setProdutoNome(p.nome);
     setCodigoProduto(p.codigo || '');
     setSetorDestino(p.setor);
     setBuscaProdutoModal('');
+    // Se a máquina atual não for compatível com o produto recém-escolhido, reseta para "Todas"
+    if (
+      maquinaDestino !== 'Todas' &&
+      !produtoVinculadoAMaquina(p, { nome: maquinaDestino, linhaPadrao: maquinaDestino, setor: p.setor })
+    ) {
+      setMaquinaDestino('Todas');
+    }
   };
 
-  // Contadores analíticos
+  // Contadores analíticos: Lotes em Bloqueio - Em produção - Concluídos
   const metricas = useMemo(() => {
-    const hoje = lotesBloqueio.filter((b) => b.prazo === 'hoje' && b.status !== 'concluido' && b.status !== 'cancelado').length;
-    const semana = lotesBloqueio.filter((b) => b.prazo === 'semana' && b.status !== 'concluido' && b.status !== 'cancelado').length;
-    const mes = lotesBloqueio.filter((b) => b.prazo === 'mes' && b.status !== 'concluido' && b.status !== 'cancelado').length;
+    const bloqueio = lotesBloqueio.filter(
+      (b) => b.status !== 'concluido' && b.status !== 'em_andamento' && b.status !== 'cancelado'
+    ).length;
     const emProducao = lotesBloqueio.filter((b) => b.status === 'em_andamento').length;
     const concluidos = lotesBloqueio.filter((b) => b.status === 'concluido').length;
-    const totalAtivos = lotesBloqueio.filter((b) => b.status !== 'concluido' && b.status !== 'cancelado').length;
 
-    return { hoje, semana, mes, emProducao, concluidos, totalAtivos };
+    return { bloqueio, emProducao, concluidos };
   }, [lotesBloqueio]);
 
-  // Ordenação por urgência:
-  // 1. Em andamento na máquina
-  // 2. Prazo 'hoje'
-  // 3. Prazo 'semana'
-  // 4. Prazo 'mes'
-  // 5. Concluídos por último
+  // Ordenação e filtragem: Lotes em Bloqueio - Em produção - Concluídos
   const lotesOrdenados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
     return [...lotesBloqueio]
       .filter((lote) => {
         // Filtro por tab/status
-        if (filtroStatus === 'pendentes' && lote.status === 'concluido') return false;
-        if (filtroStatus === 'hoje' && (lote.prazo !== 'hoje' || lote.status === 'concluido')) return false;
+        if (filtroStatus === 'bloqueio' && (lote.status === 'concluido' || lote.status === 'em_andamento')) return false;
+        if (filtroStatus === 'em_producao' && lote.status !== 'em_andamento') return false;
         if (filtroStatus === 'concluidos' && lote.status !== 'concluido') return false;
 
         // Busca por texto
@@ -125,19 +144,7 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
         if (a.status === 'em_andamento' && b.status !== 'em_andamento') return -1;
         if (a.status !== 'em_andamento' && b.status === 'em_andamento') return 1;
 
-        // Ordem por prazo: hoje (0) > semana (1) > mes (2)
-        const pesoPrazo: Record<PrazoBloqueio, number> = {
-          hoje: 0,
-          semana: 1,
-          mes: 2,
-        };
-
-        const pesoA = pesoPrazo[a.prazo] ?? 3;
-        const pesoB = pesoPrazo[b.prazo] ?? 3;
-
-        if (pesoA !== pesoB) return pesoA - pesoB;
-
-        // Desempate pela data de criação
+        // Desempate pela data de criação (mais recentes primeiro)
         return new Date(b.criadoEm || 0).getTime() - new Date(a.criadoEm || 0).getTime();
       });
   }, [lotesBloqueio, filtroStatus, busca]);
@@ -206,8 +213,8 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
             </h2>
           </div>
           <p className="text-xs sm:text-sm text-fuchsia-200/80 max-w-2xl">
-            Lotes <strong>já vendidos antecipadamente</strong> com atendimento mandatório. Ao serem
-            iniciados no chão de fábrica, a respectiva máquina receberá <strong>destaque visual magenta</strong> e a etiqueta piscando <strong>"BLOQUEIO"</strong>.
+            Lotes <strong>já vendidos antecipadamente</strong> com atendimento mandatório. Ao ser
+            iniciado o envase, a respectiva máquina receberá <strong>destaque visual magenta</strong> e a etiqueta piscando <strong>"BLOQUEIO"</strong>.
           </p>
         </div>
 
@@ -224,122 +231,101 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
         </button>
       </div>
 
-      {/* Cards de Métricas e Filtros Rápidos */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 sm:gap-3">
-        {/* Vence Hoje (Crítico) */}
+      {/* Cards de Métricas e Filtros Rápidos: Lotes em Bloqueio - Em produção - Concluídos */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {/* Lotes em Bloqueio */}
         <button
-          onClick={() => setFiltroStatus('hoje')}
-          className={`p-3 rounded border text-left transition-all cursor-pointer ${
-            filtroStatus === 'hoje'
+          onClick={() => setFiltroStatus('bloqueio')}
+          className={`p-3.5 rounded-lg border text-left transition-all cursor-pointer ${
+            filtroStatus === 'bloqueio'
               ? 'bg-red-950/80 border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.3)] ring-1 ring-red-400'
               : 'bg-[#181119] border-red-900/40 hover:border-red-600/60 text-white'
           }`}
         >
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-red-400 mb-1">
-            <span>Vence Hoje</span>
-            <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+            <span>Lotes em Bloqueio</span>
+            <ShieldAlert className="w-4 h-4 text-red-400" />
           </div>
-          <div className="text-2xl font-mono font-black text-red-300">{metricas.hoje}</div>
-          <div className="text-[9px] text-red-400/70 font-mono mt-0.5">Urgência Imediata</div>
+          <div className="text-2xl font-mono font-black text-red-300">{metricas.bloqueio}</div>
+          <div className="text-[9px] text-red-400/70 font-mono mt-0.5">Aguardando Produção</div>
         </button>
 
-        {/* Essa Semana */}
+        {/* Em Produção */}
         <button
-          onClick={() => setFiltroStatus('pendentes')}
-          className="p-3 rounded border border-amber-900/40 bg-[#181119] text-left hover:border-amber-600/60 transition-all cursor-pointer"
+          onClick={() => setFiltroStatus('em_producao')}
+          className={`p-3.5 rounded-lg border text-left transition-all cursor-pointer ${
+            filtroStatus === 'em_producao'
+              ? 'bg-fuchsia-950/90 border-fuchsia-400 shadow-[0_0_18px_rgba(217,70,239,0.35)] ring-1 ring-fuchsia-300'
+              : 'bg-[#181119] border-fuchsia-900/40 hover:border-fuchsia-600/60 text-white'
+          }`}
         >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-amber-400 mb-1">
-            Esta Semana
-          </div>
-          <div className="text-2xl font-mono font-black text-amber-300">{metricas.semana}</div>
-          <div className="text-[9px] text-amber-400/70 font-mono mt-0.5">Prioridade Alta</div>
-        </button>
-
-        {/* Esse Mês */}
-        <button
-          onClick={() => setFiltroStatus('pendentes')}
-          className="p-3 rounded border border-blue-900/40 bg-[#181119] text-left hover:border-blue-600/60 transition-all cursor-pointer"
-        >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-blue-400 mb-1">
-            Este Mês
-          </div>
-          <div className="text-2xl font-mono font-black text-blue-300">{metricas.mes}</div>
-          <div className="text-[9px] text-blue-400/70 font-mono mt-0.5">Planejado</div>
-        </button>
-
-        {/* Em Produção Agora */}
-        <div className="p-3 rounded border border-fuchsia-700/60 bg-fuchsia-950/40 text-left">
           <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 mb-1">
             <span>Em Produção</span>
-            {metricas.emProducao > 0 && (
+            {metricas.emProducao > 0 ? (
               <span className="text-[9px] font-black bg-fuchsia-600 text-white px-1.5 rounded uppercase animate-pulse">
                 RODANDO
               </span>
+            ) : (
+              <Play className="w-3.5 h-3.5 fill-fuchsia-400 text-fuchsia-400" />
             )}
           </div>
           <div className="text-2xl font-mono font-black text-fuchsia-200">{metricas.emProducao}</div>
           <div className="text-[9px] text-fuchsia-300/70 font-mono mt-0.5">Nas Envasadoras</div>
-        </div>
+        </button>
 
         {/* Concluídos */}
         <button
           onClick={() => setFiltroStatus('concluidos')}
-          className={`p-3 rounded border text-left transition-all cursor-pointer ${
+          className={`p-3.5 rounded-lg border text-left transition-all cursor-pointer ${
             filtroStatus === 'concluidos'
               ? 'bg-emerald-950/80 border-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] ring-1 ring-emerald-400'
               : 'bg-[#181119] border-emerald-900/30 hover:border-emerald-600/60 text-white'
           }`}
         >
-          <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400 mb-1">
-            Concluídos
+          <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-emerald-400 mb-1">
+            <span>Concluídos</span>
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
           </div>
           <div className="text-2xl font-mono font-black text-emerald-300">{metricas.concluidos}</div>
           <div className="text-[9px] text-emerald-400/70 font-mono mt-0.5">Baixados / Finalizados</div>
         </button>
       </div>
 
-      {/* Barra de Filtros e Busca */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#161616] p-3 rounded border border-white/10">
+      {/* Barra de Filtros e Busca: Lotes em Bloqueio - Em produção - Concluídos */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#161616] p-3 rounded-lg border border-white/10">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
           <button
-            onClick={() => setFiltroStatus('pendentes')}
-            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
-              filtroStatus === 'pendentes'
-                ? 'bg-fuchsia-600 text-white shadow'
+            onClick={() => setFiltroStatus('bloqueio')}
+            className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              filtroStatus === 'bloqueio'
+                ? 'bg-red-600 text-white shadow-[0_0_12px_rgba(239,68,68,0.4)]'
                 : 'text-white/60 hover:text-white hover:bg-white/5'
             }`}
           >
-            Pendentes ({metricas.totalAtivos})
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>Lotes em Bloqueio ({metricas.bloqueio})</span>
           </button>
           <button
-            onClick={() => setFiltroStatus('hoje')}
-            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
-              filtroStatus === 'hoje'
-                ? 'bg-red-600 text-white shadow'
+            onClick={() => setFiltroStatus('em_producao')}
+            className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              filtroStatus === 'em_producao'
+                ? 'bg-fuchsia-600 text-white shadow-[0_0_12px_rgba(217,70,239,0.4)]'
                 : 'text-white/60 hover:text-white hover:bg-white/5'
             }`}
           >
-            Vencem Hoje ({metricas.hoje})
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Em Produção ({metricas.emProducao})</span>
           </button>
           <button
             onClick={() => setFiltroStatus('concluidos')}
-            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
+            className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
               filtroStatus === 'concluidos'
-                ? 'bg-emerald-600 text-white shadow'
+                ? 'bg-emerald-600 text-white shadow-[0_0_12px_rgba(16,185,129,0.4)]'
                 : 'text-white/60 hover:text-white hover:bg-white/5'
             }`}
           >
-            Concluídos ({metricas.concluidos})
-          </button>
-          <button
-            onClick={() => setFiltroStatus('todos')}
-            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer ${
-              filtroStatus === 'todos'
-                ? 'bg-white/20 text-white shadow'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            Todos ({lotesBloqueio.length})
+            <CheckCircle2 className="w-3.5 h-3.5" />
+            <span>Concluídos ({metricas.concluidos})</span>
           </button>
         </div>
 
@@ -362,29 +348,37 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
             <ShieldAlert className="w-6 h-6" />
           </div>
           <h3 className="text-sm font-bold uppercase tracking-wider text-white">
-            Nenhum Lote de Bloqueio Encontrado
+            {filtroStatus === 'bloqueio'
+              ? 'Nenhum Lote em Bloqueio'
+              : filtroStatus === 'em_producao'
+              ? 'Nenhum Lote em Produção'
+              : 'Nenhum Lote Concluído'}
           </h3>
           <p className="text-xs text-white/50 max-w-md mx-auto">
             {busca
               ? 'Nenhum resultado para os termos da busca.'
-              : 'Não há lotes de bloqueio cadastrados com este filtro. Cadastre os lotes já vendidos para alertar a produção com prioridade máxima.'}
+              : filtroStatus === 'bloqueio'
+              ? 'Cadastre os lotes já vendidos para alertar a produção com prioridade máxima.'
+              : filtroStatus === 'em_producao'
+              ? 'Quando uma envasadora iniciar o processamento de um lote de bloqueio, ele aparecerá aqui.'
+              : 'Os lotes finalizados ou baixados aparecerão nesta lista.'}
           </p>
-          <button
-            onClick={() => {
-              limparFormulario();
-              setModalCadastroAberto(true);
-            }}
-            className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold uppercase tracking-wider px-4 py-2 rounded inline-flex items-center gap-2 cursor-pointer shadow"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Cadastrar Primeiro Lote</span>
-          </button>
+          {filtroStatus === 'bloqueio' && (
+            <button
+              onClick={() => {
+                limparFormulario();
+                setModalCadastroAberto(true);
+              }}
+              className="bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-bold uppercase tracking-wider px-4 py-2 rounded inline-flex items-center gap-2 cursor-pointer shadow"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Cadastrar Lote em Bloqueio</span>
+            </button>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
           {lotesOrdenados.map((lote) => {
-            const ehHoje = lote.prazo === 'hoje';
-            const ehSemana = lote.prazo === 'semana';
             const emAndamento = lote.status === 'em_andamento';
             const concluido = lote.status === 'concluido';
 
@@ -397,13 +391,11 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                     ? 'bg-[#141414] border-white/10 opacity-75'
                     : emAndamento
                     ? 'bg-gradient-to-b from-[#2d0f36] via-[#1f0b26] to-[#140817] border-2 border-fuchsia-400 shadow-[0_0_20px_rgba(217,70,239,0.3)] ring-1 ring-fuchsia-300'
-                    : ehHoje
-                    ? 'bg-gradient-to-b from-[#2b0d1a] via-[#1a0c14] to-[#12080e] border-2 border-red-500/80 shadow-[0_0_18px_rgba(239,68,68,0.25)]'
-                    : 'bg-gradient-to-b from-[#1c1022] via-[#150c1a] to-[#100814] border border-fuchsia-800/60 hover:border-fuchsia-500/80'
+                    : 'bg-gradient-to-b from-[#260f1c] via-[#1a0b14] to-[#11070e] border border-red-800/60 hover:border-red-500/80'
                 }`}
               >
                 <div>
-                  {/* Topo do Card: Número do Lote e Selos de Urgência */}
+                  {/* Topo do Card: Número do Lote e Selo de Status */}
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <div className="space-y-0.5">
                       <div className="flex items-center gap-2">
@@ -423,24 +415,21 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                       )}
                     </div>
 
-                    {/* Selo de Prazo / Urgência */}
+                    {/* Selos: Lotes em Bloqueio - Em produção - Concluídos */}
                     {concluido ? (
                       <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center gap-1">
                         <Check className="w-3 h-3" />
                         <span>Concluído</span>
                       </span>
-                    ) : ehHoje ? (
-                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-red-600 text-white animate-pulse border border-red-400 shadow-[0_0_10px_rgba(239,68,68,0.7)] flex items-center gap-1">
+                    ) : emAndamento ? (
+                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-fuchsia-600 text-white animate-pulse border border-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.7)] flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-                        <span>VENCE HOJE</span>
-                      </span>
-                    ) : ehSemana ? (
-                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40">
-                        ESSA SEMANA
+                        <span>EM PRODUÇÃO</span>
                       </span>
                     ) : (
-                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-500/40">
-                        ESSE MÊS
+                      <span className="text-[9px] px-2 py-0.5 rounded font-black uppercase tracking-wider bg-red-600/30 text-red-300 border border-red-500/50 flex items-center gap-1">
+                        <ShieldAlert className="w-3 h-3 text-red-400" />
+                        <span>LOTE EM BLOQUEIO</span>
                       </span>
                     )}
                   </div>
@@ -456,9 +445,23 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                   {/* Detalhes de Máquina, Setor e Quantidade */}
                   <div className="grid grid-cols-2 gap-2 text-[11px] font-mono mb-3 bg-black/40 p-2 rounded border border-white/5">
                     <div>
-                      <span className="text-white/40 block text-[9px] uppercase">Envasadora / Setor:</span>
+                      <span className="text-white/40 block text-[9px] uppercase">Envasadora / Compatibilidade:</span>
                       <span className="font-bold text-fuchsia-200 truncate block">
-                        {lote.maquina && lote.maquina !== 'Todas' ? lote.maquina : 'Qualquer Máquina'}
+                        {lote.maquina &&
+                        lote.maquina !== 'Todas' &&
+                        lote.maquina !== 'Qualquer Máquina Compatível' ? (
+                          lote.maquina
+                        ) : (
+                          (() => {
+                            const compativas = maquinas.filter((m) =>
+                              loteBloqueioCompativelComMaquina(lote, m, produtos)
+                            );
+                            if (compativas.length > 0) {
+                              return compativas.map((m) => m.nome).join(', ');
+                            }
+                            return 'Qualquer Máquina Compatível';
+                          })()
+                        )}
                         {lote.setor && (
                           <span className="text-white/50 text-[10px]">
                             {' '}• {lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos'}
@@ -694,63 +697,18 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                 </div>
               </div>
 
-              {/* Prazo / Data Limite (Hoje, Essa Semana, Esse Mês) */}
+              {/* Data Limite Prevista (Opcional) */}
               <div>
-                <label className="block text-[10px] font-bold uppercase tracking-wider text-fuchsia-300 mb-1.5 flex items-center gap-1.5">
-                  <Clock className="w-3 h-3 text-fuchsia-400" />
-                  <span>Prazo Limite para Produção</span>
-                  <span className="text-red-400 font-bold">*</span>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-white/70 mb-1 flex items-center gap-1.5">
+                  <Calendar className="w-3 h-3 text-fuchsia-400" />
+                  <span>Data Limite Prevista (Opcional)</span>
                 </label>
-
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPrazo('hoje')}
-                    className={`py-2 px-2 rounded border text-center font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      prazo === 'hoje'
-                        ? 'bg-red-600 border-red-400 text-white shadow-[0_0_12px_rgba(239,68,68,0.5)] scale-[1.02]'
-                        : 'bg-black/60 border-white/10 text-white/60 hover:text-white hover:border-red-900'
-                    }`}
-                  >
-                    <div className="flex items-center justify-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-white animate-ping" />
-                      <span>Hoje</span>
-                    </div>
-                    <span className="text-[9px] block font-mono font-normal opacity-80 mt-0.5">
-                      Máxima Urgência
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPrazo('semana')}
-                    className={`py-2 px-2 rounded border text-center font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      prazo === 'semana'
-                        ? 'bg-amber-600 border-amber-400 text-white shadow-[0_0_12px_rgba(245,158,11,0.5)] scale-[1.02]'
-                        : 'bg-black/60 border-white/10 text-white/60 hover:text-white hover:border-amber-900'
-                    }`}
-                  >
-                    <span>Essa Semana</span>
-                    <span className="text-[9px] block font-mono font-normal opacity-80 mt-0.5">
-                      Prioridade Alta
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPrazo('mes')}
-                    className={`py-2 px-2 rounded border text-center font-bold text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                      prazo === 'mes'
-                        ? 'bg-blue-600 border-blue-400 text-white shadow-[0_0_12px_rgba(59,130,246,0.5)] scale-[1.02]'
-                        : 'bg-black/60 border-white/10 text-white/60 hover:text-white hover:border-blue-900'
-                    }`}
-                  >
-                    <span>Esse Mês</span>
-                    <span className="text-[9px] block font-mono font-normal opacity-80 mt-0.5">
-                      Planejado
-                    </span>
-                  </button>
-                </div>
+                <input
+                  type="date"
+                  value={dataLimiteCustom}
+                  onChange={(e) => setDataLimiteCustom(e.target.value)}
+                  className="w-full bg-black/60 border border-white/20 text-white text-xs px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400 font-mono"
+                />
               </div>
 
               {/* Máquina e Setor */}
@@ -764,13 +722,43 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                     onChange={(e) => setMaquinaDestino(e.target.value)}
                     className="w-full bg-black/60 border border-white/20 text-white text-xs font-bold px-3 py-2 rounded focus:outline-none focus:border-fuchsia-400"
                   >
-                    <option value="Todas">Qualquer Máquina Compatível</option>
-                    {maquinas.map((m) => (
-                      <option key={m.id} value={m.nome}>
-                        {m.nome} ({m.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos'})
-                      </option>
-                    ))}
+                    <option value="Todas">
+                      Qualquer Máquina Compatível{' '}
+                      {produtoModalDetectado && maquinasCompativeisModal.length > 0
+                        ? `(${maquinasCompativeisModal.map((m) => m.nome).join(', ')})`
+                        : ''}
+                    </option>
+                    {maquinas.map((m) => {
+                      const ehCompativel = produtoModalDetectado
+                        ? produtoVinculadoAMaquina(produtoModalDetectado, m)
+                        : true;
+                      return (
+                        <option key={m.id} value={m.nome} disabled={!ehCompativel}>
+                          {m.nome} ({m.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos'})
+                          {!ehCompativel ? ' — Incompatível' : ''}
+                        </option>
+                      );
+                    })}
                   </select>
+
+                  {/* Indicador de compatibilidade do produto */}
+                  {produtoModalDetectado && (
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      <span className="text-white/40 text-[9px] uppercase font-mono">Compatível com:</span>
+                      {maquinasCompativeisModal.length > 0 ? (
+                        maquinasCompativeisModal.map((m) => (
+                          <span
+                            key={m.id}
+                            className="bg-fuchsia-950/90 border border-fuchsia-500/50 text-fuchsia-200 px-1.5 py-0.5 rounded font-bold text-[10px]"
+                          >
+                            {m.nome}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-amber-400 text-[10px] font-bold">Nenhuma máquina vinculada</span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div>
