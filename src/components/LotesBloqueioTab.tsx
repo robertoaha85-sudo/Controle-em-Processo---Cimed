@@ -581,9 +581,10 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                     </p>
                   )}
 
-                  {concluido && lote.finalizadoEm && (
+                  {concluido && (lote.concluidoEm || (lote as any).finalizadoEm) && (
                     <p className="text-[10px] font-mono text-emerald-400 mb-2">
-                      Finalizado em: {new Date(lote.finalizadoEm).toLocaleString('pt-BR')}
+                      Finalizado em:{' '}
+                      {new Date(lote.concluidoEm || (lote as any).finalizadoEm).toLocaleString('pt-BR')}
                     </p>
                   )}
                 </div>
@@ -594,9 +595,12 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                     {!concluido ? (
                       <button
                         id={`btn-concluir-bloqueio-${lote.id}`}
-                        onClick={() => concluirLoteBloqueio(lote.id)}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await concluirLoteBloqueio(lote.id);
+                        }}
                         title="Dar baixa manual no lote (Marcar como concluído)"
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors shadow"
+                        className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-[11px] font-bold uppercase tracking-wider px-2.5 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-all shadow"
                       >
                         <CheckCircle2 className="w-3.5 h-3.5" />
                         <span>Dar Baixa</span>
@@ -604,15 +608,16 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                     ) : (
                       <button
                         id={`btn-reabrir-bloqueio-${lote.id}`}
-                        onClick={() =>
-                          atualizarLoteBloqueio(lote.id, {
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          await atualizarLoteBloqueio(lote.id, {
                             status: 'pendente',
-                            finalizadoEm: undefined,
-                            maquinaEmUsoId: undefined,
-                          })
-                        }
+                            concluidoEm: null,
+                            maquinaEmUsoId: null,
+                          });
+                        }}
                         title="Reabrir lote de bloqueio pendente"
-                        className="bg-white/10 hover:bg-white/20 text-white/80 text-[11px] font-bold uppercase tracking-wider px-2 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-colors"
+                        className="bg-white/10 hover:bg-white/20 active:scale-95 text-white/80 text-[11px] font-bold uppercase tracking-wider px-2 py-1.5 rounded flex items-center gap-1 cursor-pointer transition-all"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                         <span>Reabrir</span>

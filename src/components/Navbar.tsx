@@ -19,7 +19,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
-  const { horaAtual, conectado, somAtivo, alternarSom, resumo, lotesBloqueio } = useProduction();
+  const { horaAtual, conectado, ultimaSincronizacao, somAtivo, alternarSom, resumo, lotesBloqueio } = useProduction();
 
   const bloqueiosAtivos = lotesBloqueio.filter((b) => b.status === 'em_andamento').length;
   const bloqueiosPendentes = lotesBloqueio.filter((b) => b.status === 'pendente').length;
@@ -87,22 +87,32 @@ export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
               </div>
             </div>
 
-            {/* Indicador de Status SSE e Som */}
+            {/* Indicador de Status Tempo Real e Som */}
             <div className="flex items-center gap-2">
-              {/* Badge SSE */}
+              {/* Badge Tempo Real */}
               <div
                 id="badge-conexao"
-                title={conectado ? 'Sincronizado em tempo real entre todos os dispositivos' : 'Tentando reconectar ao servidor...'}
+                title={
+                  conectado
+                    ? `Sincronização em tempo real ativa com gestores e operadores (última atualização: ${
+                        ultimaSincronizacao ? ultimaSincronizacao.toLocaleTimeString('pt-BR') : 'agora'
+                      })`
+                    : 'Tentando restabelecer sincronização...'
+                }
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px] font-bold uppercase tracking-wider border ${
                   conectado
-                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400'
-                    : 'bg-red-500/10 border-red-500/40 text-red-400 animate-pulse'
+                    ? 'bg-emerald-500/15 border-emerald-500/50 text-emerald-400 shadow-[0_0_8px_rgba(16,185,129,0.2)]'
+                    : 'bg-red-500/15 border-red-500/50 text-red-400 animate-pulse'
                 }`}
               >
                 {conectado ? (
                   <>
-                    <Wifi className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Online</span>
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span className="hidden sm:inline">Tempo Real Ativo</span>
+                    <span className="sm:hidden">Ao Vivo</span>
                   </>
                 ) : (
                   <>

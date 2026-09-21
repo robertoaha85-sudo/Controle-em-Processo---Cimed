@@ -1,11 +1,39 @@
 import React, { useState } from 'react';
-import { ProductionProvider } from './context/ProductionContext';
+import { ProductionProvider, useProduction } from './context/ProductionContext';
 import { Navbar } from './components/Navbar';
 import { DashboardTab } from './components/DashboardTab';
 import { ProductsTab } from './components/ProductsTab';
 import { HistoryTab } from './components/HistoryTab';
 import { LotesBloqueioTab } from './components/LotesBloqueioTab';
 import { MobileBottomNav } from './components/MobileBottomNav';
+
+function FooterSyncStatus() {
+  const { conectado, ultimaSincronizacao } = useProduction();
+
+  return (
+    <div className="flex items-center gap-3 sm:gap-5 text-[10px] font-bold uppercase tracking-wider">
+      <div className="flex items-center gap-1.5">
+        <span
+          className={`w-2 h-2 rounded-full ${
+            conectado ? 'bg-emerald-800 animate-pulse' : 'bg-red-700'
+          }`}
+        ></span>
+        <span>
+          Sincronização Nuvem:{' '}
+          <span className={conectado ? 'text-emerald-950 font-black' : 'text-red-950 font-black'}>
+            {conectado ? 'Ao Vivo (Tempo Real)' : 'Reconectando...'}
+          </span>
+        </span>
+        {ultimaSincronizacao && (
+          <span className="text-black/60 hidden md:inline">
+            • {ultimaSincronizacao.toLocaleTimeString('pt-BR')}
+          </span>
+        )}
+      </div>
+      <span className="opacity-80 hidden sm:inline">v2.5.0</span>
+    </div>
+  );
+}
 
 export default function App() {
   const [abaAtiva, setAbaAtiva] = useState<'dashboard' | 'produtos' | 'historico' | 'bloqueio'>('dashboard');
@@ -38,12 +66,7 @@ export default function App() {
               <span>Criador: Roberto Coelho Dos Santos Junior</span>
             </div>
           </div>
-          <div className="flex items-center gap-5 text-[10px] font-bold uppercase tracking-wider">
-            <span>
-              Server Sync Status: <span className="text-emerald-900 font-black">Connected</span>
-            </span>
-            <span className="opacity-80">v2.4.0</span>
-          </div>
+          <FooterSyncStatus />
         </footer>
 
         {/* Barra de Navegação Inferior Fixa no Mobile */}

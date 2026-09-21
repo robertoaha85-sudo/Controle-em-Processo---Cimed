@@ -2,7 +2,7 @@ import {
   collection,
   onSnapshot,
   addDoc,
-  updateDoc,
+  setDoc,
   deleteDoc,
   doc,
   query,
@@ -13,6 +13,21 @@ import { LoteBloqueio } from '../types';
 
 const LOCAL_STORAGE_KEY = 'cimed_lotes_bloqueio_v1';
 const COLLECTION_NAME = 'lotesBloqueio';
+
+// Remove valores undefined para compatibilidade com o Firestore
+function sanitizarParaFirestore(obj: Record<string, any>): Record<string, any> {
+  const limpo: Record<string, any> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined) {
+      limpo[k] = null;
+    } else if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+      limpo[k] = sanitizarParaFirestore(v);
+    } else {
+      limpo[k] = v;
+    }
+  }
+  return limpo;
+}
 
 export function obterLotesBloqueioLocais(): LoteBloqueio[] {
   try {
@@ -190,7 +205,7 @@ export async function atualizarLoteBloqueio(
 
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
-    await updateDoc(docRef, updates);
+    await setDoc(docRef, sanitizarParaFirestore(updates), { merge: true });
   } catch (err) {
     console.warn('Falha ao atualizar no Firestore (mantido localmente):', err);
   }
@@ -204,6 +219,7 @@ export async function concluirLoteBloqueio(id: string): Promise<void> {
   await atualizarLoteBloqueio(id, {
     status: 'concluido',
     concluidoEm: agora,
+    maquinaEmUsoId: null,
   });
 }
 

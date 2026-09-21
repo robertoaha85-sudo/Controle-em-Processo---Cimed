@@ -12,11 +12,21 @@ import { tocarAlarmeProblemaMecanico, tocarSomSucesso, isSoundEnabled, setSoundE
 import {
   ouvirLotesBloqueio,
   cadastrarLoteBloqueio,
-  atualizarLoteBloqueio,
-  concluirLoteBloqueio,
+  atualizarLoteBloqueio as atualizarLoteBloqueioFirestore,
+  concluirLoteBloqueio as concluirLoteBloqueioFirestore,
   excluirLoteBloqueio,
   obterLotesBloqueioLocais,
 } from '../services/lotesBloqueioService';
+import {
+  ouvirMaquinasEmTempoReal,
+  atualizarMaquinaFirestore,
+  ouvirHistoricoEmTempoReal,
+  adicionarLoteHistoricoFirestore,
+  excluirLoteHistoricoFirestore,
+  restaurarTodasMaquinasFirestore,
+  obterMaquinasLocais,
+  obterHistoricoLocal,
+} from '../services/realtimeSyncService';
 
 interface ProductionContextType {
   maquinas: Maquina[];
@@ -26,6 +36,7 @@ interface ProductionContextType {
   lotesBloqueio: LoteBloqueio[];
   horaAtual: Date;
   conectado: boolean;
+  ultimaSincronizacao: Date | null;
   somAtivo: boolean;
   alternarSom: () => void;
   resumo: ResumoStatus;
@@ -74,20 +85,23 @@ interface ProductionContextType {
       status?: StatusBloqueio;
     }
   ) => Promise<string>;
+  atualizarLoteBloqueio: (id: string, dados: Partial<LoteBloqueio>) => Promise<void>;
+  concluirLoteBloqueio: (id: string) => Promise<void>;
+  removerLoteBloqueio: (id: string) => Promise<void>;
   atualizarLoteBloqueioDados: (id: string, dados: Partial<LoteBloqueio>) => Promise<void>;
   concluirLoteBloqueioStatus: (id: string) => Promise<void>;
-  removerLoteBloqueio: (id: string) => Promise<void>;
 }
 
 const ProductionContext = createContext<ProductionContextType | null>(null);
 
 export function ProductionProvider({ children }: { children: React.ReactNode }) {
-  const [maquinas, setMaquinas] = useState<Maquina[]>(MAQUINAS_INICIAIS);
+  const [maquinas, setMaquinas] = useState<Maquina[]>(obterMaquinasLocais);
   const [produtos, setProdutos] = useState<Produto[]>(PRODUTOS_INICIAIS);
-  const [historico, setHistorico] = useState<LoteHistorico[]>([]);
+  const [historico, setHistorico] = useState<LoteHistorico[]>(obterHistoricoLocal);
   const [equipes, setEquipes] = useState<MembroEquipe[]>(EQUIPES_INICIAIS);
   const [lotesBloqueio, setLotesBloqueio] = useState<LoteBloqueio[]>(obterLotesBloqueioLocais);
-  const [conectado, setConectado] = useState(false);
+  const [conectado, setConectado] = useState(true);
+  const [ultimaSincronizacao, setUltimaSincronizacao] = useState<Date | null>(new Date());
   const [horaAtual, setHoraAtual] = useState(new Date());
   const [somAtivo, setSomAtivo] = useState(isSoundEnabled());
 
@@ -103,6 +117,25 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       setHoraAtual(new Date());
     }, 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // 1. Sincronização em tempo real das Máquinas no Firestore (sub-segundo entre todos os clientes)
+  useEffect(() => {
+    const cancelar = ouvirMaquinasEmTempoReal((novasMaquinas) => {
+      setMaquinas(novasMaquinas);
+      setConectado(true);
+      setUltimaSincronizacao(new Date());
+    });
+    return () => cancelar();
+  }, []);
+
+  // 2. Sincronização em tempo real do Histórico de lotes no Firestore
+  useEffect(() => {
+    const cancelar = ouvirHistoricoEmTempoReal((novoHistorico) => {
+      setHistorico(novoHistorico);
+      setUltimaSincronizacao(new Date());
+    });
+    return () => cancelar();
   }, []);
 
   // Carga inicial e conexão SSE em tempo real com fallback resiliente de polling
@@ -568,6 +601,9 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       prev.map((m) => (m.id === maquinaId ? { ...m, ...payload } : m))
     );
 
+    // Sincroniza instantaneamente no Firebase Firestore para todos os gestores
+    atualizarMaquinaFirestore(maquinaId, payload).catch(console.warn);
+
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
         method: 'PUT',
@@ -583,7 +619,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   // Marcar problema mecânico (dispara alerta visual e sonoro)
   const marcarProblemaMecanico = async (maquinaId: string, detalhe?: string) => {
     const payload = {
-      status: 'problema_mecanico',
+      status: 'problema_mecanico' as const,
       teveProblemaMecanico: true,
       detalheProblema: detalhe || 'Parada por manutenção / problema mecânico',
     };
@@ -593,6 +629,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     );
 
     tocarAlarmeProblemaMecanico();
+    atualizarMaquinaFirestore(maquinaId, payload).catch(console.warn);
 
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
@@ -611,7 +648,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     if (!maquina) return;
 
     const payload = {
-      status: 'em_andamento',
+      status: 'em_andamento' as const,
       detalheProblema: null,
       teveProblemaMecanico: true, // Mantém que já teve no histórico deste lote
     };
@@ -621,6 +658,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     );
 
     tocarSomSucesso();
+    atualizarMaquinaFirestore(maquinaId, payload).catch(console.warn);
 
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
@@ -655,6 +693,8 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       prev.map((m) => (m.id === maquinaId ? { ...m, ...payload } : m))
     );
 
+    atualizarMaquinaFirestore(maquinaId, payload).catch(console.warn);
+
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
         method: 'PUT',
@@ -681,6 +721,8 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     setMaquinas((prev) =>
       prev.map((m) => (m.id === maquinaId ? { ...m, ...payload } : m))
     );
+
+    atualizarMaquinaFirestore(maquinaId, payload).catch(console.warn);
 
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
@@ -738,7 +780,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
           const matchMaq = b.maquinaEmUsoId === maquinaId && b.status === 'em_andamento';
 
           if (matchId || matchLote || matchMaq) {
-            concluirLoteBloqueio(b.id).catch(console.warn);
+            concluirLoteBloqueioFirestore(b.id).catch(console.warn);
             return {
               ...b,
               status: 'concluido' as StatusBloqueio,
@@ -750,26 +792,30 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       );
     }
 
+    const maquinaResetada: Partial<Maquina> = {
+      status: 'livre',
+      produtoAtualId: null,
+      produtoAtualCodigo: null,
+      produtoAtualNome: null,
+      numeroLote: null,
+      dataInicio: null,
+      horaInicio: null,
+      previsaoTermino: null,
+      tempoEnvaseMinutos: null,
+      teveProblemaMecanico: false,
+      detalheProblema: null,
+      isBloqueio: false,
+      loteBloqueioId: null,
+      ultimaAtualizacao: agora.toISOString(),
+    };
+
     // 1. Atualização Otimista Imediata: Libera a máquina na hora na interface
     setMaquinas((prev) =>
       prev.map((m) =>
         m.id === maquinaId
           ? {
               ...m,
-              status: 'livre',
-              produtoAtualId: null,
-              produtoAtualCodigo: null,
-              produtoAtualNome: null,
-              numeroLote: null,
-              dataInicio: null,
-              horaInicio: null,
-              previsaoTermino: null,
-              tempoEnvaseMinutos: null,
-              teveProblemaMecanico: false,
-              detalheProblema: null,
-              isBloqueio: false,
-              loteBloqueioId: null,
-              ultimaAtualizacao: agora.toISOString(),
+              ...maquinaResetada,
             }
           : m
       )
@@ -778,7 +824,12 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     // 2. Adiciona imediatamente ao histórico se tinha produto
     if (maquinaAlvo.produtoAtualNome) {
       setHistorico((prev) => [historicoOtimista, ...prev]);
+      // Sincroniza o lote no Firestore para todos os gestores
+      adicionarLoteHistoricoFirestore(historicoOtimista).catch(console.warn);
     }
+
+    // Sincroniza a liberação da máquina no Firestore para todos os gestores
+    atualizarMaquinaFirestore(maquinaId, maquinaResetada).catch(console.warn);
 
     tocarSomSucesso();
 
@@ -799,7 +850,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         }
       }
     } catch (err) {
-      console.warn('Finalização salva no cliente, aguardando conexão:', err);
+      console.warn('Finalização salva no cliente e no Firestore, aguardando API:', err);
     }
   };
 
@@ -831,7 +882,12 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
 
   const excluirLoteHistorico = async (id: string) => {
     setHistorico((prev) => prev.filter((h) => h.id !== id));
-    await fetch(`/api/historico/${id}`, { method: 'DELETE' });
+    excluirLoteHistoricoFirestore(id).catch(console.warn);
+    try {
+      await fetch(`/api/historico/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Exclusão salva no Firestore:', err);
+    }
   };
 
   const atualizarEquipes = async (novasEquipes: MembroEquipe[]) => {
@@ -844,14 +900,17 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   };
 
   const restaurarDadosPadrao = async () => {
-    await fetch('/api/reset-demo', { method: 'POST' });
+    restaurarTodasMaquinasFirestore().catch(console.warn);
+    try {
+      await fetch('/api/reset-demo', { method: 'POST' });
+    } catch {}
     setMaquinas(MAQUINAS_INICIAIS);
     setProdutos(PRODUTOS_INICIAIS);
     setHistorico([]);
     setEquipes(EQUIPES_INICIAIS);
   };
 
-  // Funções de Lotes de Bloqueio (Firebase)
+  // Funções de Lotes de Bloqueio (Firebase Firestore + Atualização Otimista Instantânea)
   const adicionarLoteBloqueio = async (
     dados: Omit<LoteBloqueio, 'id' | 'criadoEm' | 'status'> & {
       id?: string;
@@ -864,16 +923,95 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     return id;
   };
 
-  const atualizarLoteBloqueioDados = async (id: string, dados: Partial<LoteBloqueio>) => {
-    await atualizarLoteBloqueio(id, dados);
+  const atualizarLoteBloqueio = async (id: string, dados: Partial<LoteBloqueio>) => {
+    setLotesBloqueio((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, ...dados } : b))
+    );
+    try {
+      await atualizarLoteBloqueioFirestore(id, dados);
+    } catch (err) {
+      console.warn('Erro ao atualizar lote de bloqueio:', err);
+    }
   };
 
-  const concluirLoteBloqueioStatus = async (id: string) => {
-    await concluirLoteBloqueio(id);
+  const concluirLoteBloqueio = async (id: string) => {
+    const agora = new Date();
+    const agoraIso = agora.toISOString();
+
+    const loteAlvo = lotesBloqueio.find((b) => b.id === id);
+    const maquinaVinculada = maquinas.find(
+      (m) =>
+        m.loteBloqueioId === id ||
+        `bloqueio-maq-${m.id}` === id ||
+        (loteAlvo?.numeroLote &&
+          m.numeroLote &&
+          m.numeroLote.trim().toUpperCase() === loteAlvo.numeroLote.trim().toUpperCase() &&
+          m.isBloqueio)
+    );
+
+    // 1. Atualização Otimista Imediata dos lotes de bloqueio
+    setLotesBloqueio((prev) => {
+      const existe = prev.some((b) => b.id === id || (loteAlvo && b.id === loteAlvo.id));
+      if (existe) {
+        return prev.map((b) =>
+          b.id === id || (loteAlvo && b.id === loteAlvo.id)
+            ? { ...b, status: 'concluido' as StatusBloqueio, concluidoEm: agoraIso, maquinaEmUsoId: null }
+            : b
+        );
+      } else if (maquinaVinculada) {
+        const novo: LoteBloqueio = {
+          id,
+          produto: maquinaVinculada.produtoAtualNome || 'Produto Finalizado',
+          codigoProduto: maquinaVinculada.produtoAtualCodigo || null,
+          numeroLote: (maquinaVinculada.numeroLote || '').trim().toUpperCase(),
+          maquina: maquinaVinculada.nome,
+          maquinaEmUsoId: null,
+          setor: maquinaVinculada.setor,
+          prazo: 'hoje',
+          dataLimite: agoraIso.split('T')[0],
+          status: 'concluido',
+          observacoes: 'Lote finalizado via Baixa em Lotes de Bloqueio',
+          criadoEm: maquinaVinculada.ultimaAtualizacao || agoraIso,
+          concluidoEm: agoraIso,
+        };
+        return [novo, ...prev];
+      }
+      return prev;
+    });
+
+    // 2. Se a máquina vinculada estiver em processamento com este lote, finaliza a máquina e grava no histórico
+    if (maquinaVinculada && (maquinaVinculada.status === 'em_andamento' || maquinaVinculada.status === 'problema_mecanico')) {
+      await finalizarLote(maquinaVinculada.id, 'Lote de bloqueio baixado com sucesso');
+    }
+
+    // 3. Sincroniza no Firebase Firestore
+    try {
+      if (id.startsWith('bloqueio-maq-')) {
+        if (maquinaVinculada) {
+          await cadastrarLoteBloqueio({
+            produto: maquinaVinculada.produtoAtualNome || 'Produto Finalizado',
+            codigoProduto: maquinaVinculada.produtoAtualCodigo || undefined,
+            numeroLote: (maquinaVinculada.numeroLote || '').trim().toUpperCase(),
+            maquina: maquinaVinculada.nome,
+            setor: maquinaVinculada.setor,
+            prazo: 'hoje',
+            status: 'concluido',
+            concluidoEm: agoraIso,
+            observacoes: 'Baixado via painel de bloqueio',
+          });
+        }
+      } else {
+        await concluirLoteBloqueioFirestore(id);
+      }
+    } catch (err) {
+      console.warn('Erro ao sincronizar conclusão do lote de bloqueio no Firestore:', err);
+    }
+
     tocarSomSucesso();
   };
 
   const removerLoteBloqueio = async (id: string) => {
+    setLotesBloqueio((prev) => prev.filter((b) => b.id !== id));
     await excluirLoteBloqueio(id);
   };
 
@@ -887,6 +1025,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         lotesBloqueio,
         horaAtual,
         conectado,
+        ultimaSincronizacao,
         somAtivo,
         alternarSom,
         resumo,
@@ -906,8 +1045,10 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         atualizarEquipes,
         restaurarDadosPadrao,
         adicionarLoteBloqueio,
-        atualizarLoteBloqueioDados,
-        concluirLoteBloqueioStatus,
+        atualizarLoteBloqueio,
+        concluirLoteBloqueio,
+        atualizarLoteBloqueioDados: atualizarLoteBloqueio,
+        concluirLoteBloqueioStatus: concluirLoteBloqueio,
         removerLoteBloqueio,
       }}
     >
