@@ -43,7 +43,7 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
 
   // Estados de controle do formulário
   const [modalCadastroAberto, setModalCadastroAberto] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState<'bloqueio' | 'em_producao' | 'concluidos'>('bloqueio');
+  const [filtroStatus, setFiltroStatus] = useState<'todos' | 'bloqueio' | 'em_producao' | 'concluidos'>('todos');
   const [busca, setBusca] = useState('');
 
   // Campos do formulário de cadastro
@@ -101,24 +101,76 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
     }
   };
 
+  // Lista unificada: lotesBloqueio + qualquer máquina ativa com lote de bloqueio
+  const lotesBloqueioUnificados = useMemo(() => {
+    const lista = [...lotesBloqueio];
+    const lotesExistentesSet = new Set(
+      lista.map((l) => (l.numeroLote || '').trim().toUpperCase())
+    );
+
+    // Garante que qualquer envasadora com lote de bloqueio em andamento conste como 'em_andamento'
+    maquinas.forEach((m) => {
+      if (m.isBloqueio && m.status === 'em_andamento' && m.numeroLote) {
+        const numNorm = m.numeroLote.trim().toUpperCase();
+        if (!lotesExistentesSet.has(numNorm)) {
+          lista.unshift({
+            id: m.loteBloqueioId && m.loteBloqueioId !== 'bloqueio-avulso' ? m.loteBloqueioId : `bloqueio-maq-${m.id}`,
+            produto: m.produtoAtualNome || 'Produto em Linha',
+            codigoProduto: m.produtoAtualCodigo || null,
+            numeroLote: numNorm,
+            maquina: m.nome,
+            maquinaEmUsoId: m.id,
+            setor: m.setor,
+            prazo: 'hoje',
+            dataLimite: m.dataInicio || new Date().toISOString().split('T')[0],
+            status: 'em_andamento',
+            observacoes: `Em processamento na envasadora ${m.nome}`,
+            criadoEm: m.ultimaAtualizacao || new Date().toISOString(),
+            iniciadoEm: m.horaInicio || new Date().toISOString(),
+            concluidoEm: null,
+          });
+          lotesExistentesSet.add(numNorm);
+        } else {
+          // Se já existe na lista mas ainda não constava como em_andamento, atualiza
+          const idx = lista.findIndex((l) => (l.numeroLote || '').trim().toUpperCase() === numNorm);
+          if (idx !== -1 && lista[idx].status !== 'em_andamento' && lista[idx].status !== 'concluido') {
+            lista[idx] = {
+              ...lista[idx],
+              status: 'em_andamento',
+              maquina: m.nome,
+              maquinaEmUsoId: m.id,
+              iniciadoEm: lista[idx].iniciadoEm || m.horaInicio || new Date().toISOString(),
+            };
+          }
+        }
+      }
+    });
+
+    return lista;
+  }, [lotesBloqueio, maquinas]);
+
   // Contadores analíticos: Lotes em Bloqueio - Em produção - Concluídos
   const metricas = useMemo(() => {
-    const bloqueio = lotesBloqueio.filter(
+    const bloqueio = lotesBloqueioUnificados.filter(
       (b) => b.status !== 'concluido' && b.status !== 'em_andamento' && b.status !== 'cancelado'
     ).length;
-    const emProducao = lotesBloqueio.filter((b) => b.status === 'em_andamento').length;
-    const concluidos = lotesBloqueio.filter((b) => b.status === 'concluido').length;
+    const emProducao = lotesBloqueioUnificados.filter((b) => b.status === 'em_andamento').length;
+    const concluidos = lotesBloqueioUnificados.filter((b) => b.status === 'concluido').length;
+    const total = lotesBloqueioUnificados.length;
 
-    return { bloqueio, emProducao, concluidos };
-  }, [lotesBloqueio]);
+    return { bloqueio, emProducao, concluidos, total };
+  }, [lotesBloqueioUnificados]);
 
   // Ordenação e filtragem: Lotes em Bloqueio - Em produção - Concluídos
   const lotesOrdenados = useMemo(() => {
     const termo = busca.trim().toLowerCase();
 
-    return [...lotesBloqueio]
+    return [...lotesBloqueioUnificados]
       .filter((lote) => {
         // Filtro por tab/status
+        if (filtroStatus === 'todos') {
+          return true;
+        }
         if (filtroStatus === 'bloqueio' && (lote.status === 'concluido' || lote.status === 'em_andamento')) return false;
         if (filtroStatus === 'em_producao' && lote.status !== 'em_andamento') return false;
         if (filtroStatus === 'concluidos' && lote.status !== 'concluido') return false;
@@ -140,14 +192,14 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
         if (a.status === 'concluido' && b.status !== 'concluido') return 1;
         if (a.status !== 'concluido' && b.status === 'concluido') return -1;
 
-        // Em andamento vem primeiro
+        // Em andamento (Em Produção) SEMPRE no topo absoluto
         if (a.status === 'em_andamento' && b.status !== 'em_andamento') return -1;
         if (a.status !== 'em_andamento' && b.status === 'em_andamento') return 1;
 
         // Desempate pela data de criação (mais recentes primeiro)
         return new Date(b.criadoEm || 0).getTime() - new Date(a.criadoEm || 0).getTime();
       });
-  }, [lotesBloqueio, filtroStatus, busca]);
+  }, [lotesBloqueioUnificados, filtroStatus, busca]);
 
   const limparFormulario = () => {
     setProdutoNome('');
@@ -291,9 +343,33 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
         </button>
       </div>
 
-      {/* Barra de Filtros e Busca: Lotes em Bloqueio - Em produção - Concluídos */}
+      {/* Barra de Filtros e Busca: Todos - Em produção - Lotes em Bloqueio - Concluídos */}
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-[#161616] p-3 rounded-lg border border-white/10">
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+          <button
+            onClick={() => setFiltroStatus('todos')}
+            className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              filtroStatus === 'todos'
+                ? 'bg-white/20 text-white shadow ring-1 ring-white/30 font-black'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <span>Todos ({metricas.total})</span>
+          </button>
+          <button
+            onClick={() => setFiltroStatus('em_producao')}
+            className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
+              filtroStatus === 'em_producao'
+                ? 'bg-fuchsia-600 text-white shadow-[0_0_12px_rgba(217,70,239,0.4)] ring-1 ring-fuchsia-300'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Em Produção ({metricas.emProducao})</span>
+            {metricas.emProducao > 0 && (
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+            )}
+          </button>
           <button
             onClick={() => setFiltroStatus('bloqueio')}
             className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
@@ -303,18 +379,7 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
             }`}
           >
             <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Lotes em Bloqueio ({metricas.bloqueio})</span>
-          </button>
-          <button
-            onClick={() => setFiltroStatus('em_producao')}
-            className={`px-3.5 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors whitespace-nowrap cursor-pointer flex items-center gap-1.5 ${
-              filtroStatus === 'em_producao'
-                ? 'bg-fuchsia-600 text-white shadow-[0_0_12px_rgba(217,70,239,0.4)]'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-            }`}
-          >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>Em Produção ({metricas.emProducao})</span>
+            <span>Aguardando Produção ({metricas.bloqueio})</span>
           </button>
           <button
             onClick={() => setFiltroStatus('concluidos')}
@@ -349,10 +414,12 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
           </div>
           <h3 className="text-sm font-bold uppercase tracking-wider text-white">
             {filtroStatus === 'bloqueio'
-              ? 'Nenhum Lote em Bloqueio'
+              ? 'Nenhum Lote Aguardando Produção'
               : filtroStatus === 'em_producao'
               ? 'Nenhum Lote em Produção'
-              : 'Nenhum Lote Concluído'}
+              : filtroStatus === 'concluidos'
+              ? 'Nenhum Lote Concluído'
+              : 'Nenhum Lote Cadastrado'}
           </h3>
           <p className="text-xs text-white/50 max-w-md mx-auto">
             {busca
@@ -360,10 +427,12 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
               : filtroStatus === 'bloqueio'
               ? 'Cadastre os lotes já vendidos para alertar a produção com prioridade máxima.'
               : filtroStatus === 'em_producao'
-              ? 'Quando uma envasadora iniciar o processamento de um lote de bloqueio, ele aparecerá aqui.'
-              : 'Os lotes finalizados ou baixados aparecerão nesta lista.'}
+              ? 'Quando uma envasadora iniciar o processamento de um lote de bloqueio, ele aparecerá aqui com destaque.'
+              : filtroStatus === 'concluidos'
+              ? 'Os lotes finalizados ou baixados aparecerão nesta lista.'
+              : 'Cadastre um lote de bloqueio ou inicie uma máquina marcando a caixinha "Marcar como Bloqueio".'}
           </p>
-          {filtroStatus === 'bloqueio' && (
+          {(filtroStatus === 'bloqueio' || filtroStatus === 'todos') && (
             <button
               onClick={() => {
                 limparFormulario();
@@ -491,13 +560,13 @@ export const LotesBloqueioTab: React.FC<LotesBloqueioTabProps> = ({ aoIrParaDash
                   {emAndamento && (
                     <div className="text-[11px] bg-fuchsia-950/90 border border-fuchsia-500/70 text-fuchsia-200 font-bold p-2 rounded mb-3 flex items-center justify-between">
                       <span className="flex items-center gap-1.5">
-                        <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400 animate-pulse" />
-                        <span>Em processamento no chão de fábrica</span>
+                        <ShieldAlert className="w-3.5 h-3.5 text-fuchsia-400 animate-pulse shrink-0" />
+                        <span>Em processamento na envasadora: <strong className="text-white uppercase font-black">{lote.maquina || 'Em Linha'}</strong></span>
                       </span>
                       {aoIrParaDashboard && (
                         <button
                           onClick={aoIrParaDashboard}
-                          className="text-[10px] uppercase font-mono text-white underline hover:text-[#FFD100]"
+                          className="text-[10px] uppercase font-mono text-white underline hover:text-[#FFD100] shrink-0 ml-2"
                         >
                           Ver no Painel
                         </button>

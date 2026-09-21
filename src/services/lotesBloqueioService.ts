@@ -123,6 +123,9 @@ export async function cadastrarLoteBloqueio(
     id?: string;
     criadoEm?: string;
     status?: LoteBloqueio['status'];
+    iniciadoEm?: string | null;
+    concluidoEm?: string | null;
+    maquinaEmUsoId?: string | null;
   }
 ): Promise<string> {
   const agora = new Date().toISOString();
@@ -137,20 +140,34 @@ export async function cadastrarLoteBloqueio(
     status: dados.status || 'pendente',
     observacoes: dados.observacoes || '',
     criadoEm: dados.criadoEm || agora,
-    concluidoEm: null,
-    iniciadoEm: null,
-    maquinaEmUsoId: null,
+    concluidoEm: dados.concluidoEm !== undefined ? dados.concluidoEm : null,
+    iniciadoEm: dados.iniciadoEm !== undefined ? dados.iniciadoEm : null,
+    maquinaEmUsoId: dados.maquinaEmUsoId !== undefined ? dados.maquinaEmUsoId : null,
   };
 
   try {
     const colRef = collection(db, COLLECTION_NAME);
     const docRef = await addDoc(colRef, novo);
+    // Também sincroniza com cache local
+    const lista = obterLotesBloqueioLocais();
+    const idx = lista.findIndex((l) => l.id === docRef.id || l.numeroLote === novo.numeroLote);
+    if (idx !== -1) {
+      lista[idx] = { ...novo, id: docRef.id };
+    } else {
+      lista.unshift({ ...novo, id: docRef.id });
+    }
+    salvarLotesBloqueioLocais(lista);
     return docRef.id;
   } catch (err) {
     console.warn('Falha ao gravar no Firestore (fallback local):', err);
-    const localId = `bloqueio-${Date.now()}`;
+    const localId = dados.id || `bloqueio-${Date.now()}`;
     const lista = obterLotesBloqueioLocais();
-    lista.unshift({ ...novo, id: localId });
+    const idx = lista.findIndex((l) => l.id === localId || l.numeroLote === novo.numeroLote);
+    if (idx !== -1) {
+      lista[idx] = { ...novo, id: localId };
+    } else {
+      lista.unshift({ ...novo, id: localId });
+    }
     salvarLotesBloqueioLocais(lista);
     return localId;
   }
@@ -163,17 +180,19 @@ export async function atualizarLoteBloqueio(
   id: string,
   updates: Partial<LoteBloqueio>
 ): Promise<void> {
+  // Atualiza cache local imediatamente para consistência rápida
+  const lista = obterLotesBloqueioLocais();
+  const idx = lista.findIndex((l) => l.id === id);
+  if (idx !== -1) {
+    lista[idx] = { ...lista[idx], ...updates };
+    salvarLotesBloqueioLocais(lista);
+  }
+
   try {
     const docRef = doc(db, COLLECTION_NAME, id);
     await updateDoc(docRef, updates);
   } catch (err) {
-    console.warn('Falha ao atualizar no Firestore (fallback local):', err);
-    const lista = obterLotesBloqueioLocais();
-    const idx = lista.findIndex((l) => l.id === id);
-    if (idx !== -1) {
-      lista[idx] = { ...lista[idx], ...updates };
-      salvarLotesBloqueioLocais(lista);
-    }
+    console.warn('Falha ao atualizar no Firestore (mantido localmente):', err);
   }
 }
 

@@ -446,13 +446,106 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     const previsaoTermino = calcularPrevisaoTermino(horaInicio, tempoMinutos);
 
     // Identifica se este lote corresponde a um Lote de Bloqueio cadastrado
+    const loteLimpo = (numeroLote || '').trim().toUpperCase();
     const loteBloqueioEncontrado =
       loteBloqueioId
         ? lotesBloqueio.find((b) => b.id === loteBloqueioId)
-        : verificarLoteBloqueio(produto.nome, numeroLote, maquina.nome) ||
+        : lotesBloqueio.find(
+            (b) =>
+              b.numeroLote &&
+              b.numeroLote.trim().toUpperCase() === loteLimpo &&
+              b.status !== 'concluido' &&
+              b.status !== 'cancelado'
+          ) ||
+          verificarLoteBloqueio(produto.nome, numeroLote, maquina.nome) ||
           (produto.codigo ? verificarLoteBloqueio(produto.codigo, numeroLote, maquina.nome) : undefined);
 
     const ehBloqueio = Boolean(isBloqueioForcado || loteBloqueioEncontrado);
+    const agoraIso = new Date().toISOString();
+
+    let idFinalLoteBloqueio: string | null = null;
+
+    if (ehBloqueio) {
+      if (loteBloqueioEncontrado) {
+        idFinalLoteBloqueio = loteBloqueioEncontrado.id;
+        // Atualiza otimista imediato no estado React para refletir instantaneamente
+        setLotesBloqueio((prev) =>
+          prev.map((b) =>
+            b.id === loteBloqueioEncontrado.id
+              ? {
+                  ...b,
+                  status: 'em_andamento' as StatusBloqueio,
+                  maquina: maquina.nome,
+                  maquinaEmUsoId: maquina.id,
+                  iniciadoEm: agoraIso,
+                }
+              : b
+          )
+        );
+
+        // Atualiza persistência no Firestore / localStorage
+        atualizarLoteBloqueio(loteBloqueioEncontrado.id, {
+          status: 'em_andamento',
+          maquinaEmUsoId: maquina.id,
+          maquina: maquina.nome,
+          iniciadoEm: agoraIso,
+        }).catch(console.warn);
+      } else {
+        // O usuário marcou a caixinha "Marcar como Bloqueio" para um lote não cadastrado previamente
+        const novoId = `bloqueio-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        idFinalLoteBloqueio = novoId;
+
+        const novoBloqueio: LoteBloqueio = {
+          id: novoId,
+          produto: produto.nome,
+          codigoProduto: produto.codigo || null,
+          numeroLote: loteLimpo,
+          maquina: maquina.nome,
+          maquinaEmUsoId: maquina.id,
+          setor: maquina.setor,
+          prazo: 'hoje',
+          dataLimite: dataInicio || agoraIso.split('T')[0],
+          status: 'em_andamento',
+          observacoes: `Iniciado diretamente na envasadora ${maquina.nome} (Bloqueio Prioritário)`,
+          criadoEm: agoraIso,
+          iniciadoEm: agoraIso,
+          concluidoEm: null,
+        };
+
+        // Adiciona otimista imediato no estado React: aparece na hora na aba "Lotes de Bloqueio" em "Em produção"
+        setLotesBloqueio((prev) => [novoBloqueio, ...prev.filter((b) => b.id !== novoId)]);
+
+        // Persiste via cadastrarLoteBloqueio no Firestore / localStorage
+        cadastrarLoteBloqueio({
+          id: novoId,
+          produto: produto.nome,
+          codigoProduto: produto.codigo || null,
+          numeroLote: loteLimpo,
+          maquina: maquina.nome,
+          maquinaEmUsoId: maquina.id,
+          setor: maquina.setor,
+          prazo: 'hoje',
+          dataLimite: dataInicio || agoraIso.split('T')[0],
+          status: 'em_andamento',
+          observacoes: `Iniciado diretamente na envasadora ${maquina.nome} (Bloqueio Prioritário)`,
+          criadoEm: agoraIso,
+          iniciadoEm: agoraIso,
+        })
+          .then((savedId) => {
+            if (savedId && savedId !== novoId) {
+              setLotesBloqueio((prev) =>
+                prev.map((b) => (b.id === novoId ? { ...b, id: savedId } : b))
+              );
+              fetch(`/api/maquinas/${maquinaId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ loteBloqueioId: savedId }),
+              }).catch(() => {});
+            }
+          })
+          .catch(console.warn);
+      }
+    }
 
     const payload: Partial<Maquina> = {
       status: 'em_andamento' as const,
@@ -467,23 +560,13 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       teveProblemaMecanico: false,
       detalheProblema: null,
       isBloqueio: ehBloqueio,
-      loteBloqueioId: loteBloqueioEncontrado ? loteBloqueioEncontrado.id : (isBloqueioForcado ? 'bloqueio-avulso' : null),
+      loteBloqueioId: idFinalLoteBloqueio,
     };
 
-    // Atualiza otimista local
+    // Atualiza otimista local da máquina
     setMaquinas((prev) =>
       prev.map((m) => (m.id === maquinaId ? { ...m, ...payload } : m))
     );
-
-    // Se é Lote de Bloqueio, atualiza status para 'em_andamento' no Firestore
-    if (loteBloqueioEncontrado) {
-      atualizarLoteBloqueio(loteBloqueioEncontrado.id, {
-        status: 'em_andamento',
-        maquinaEmUsoId: maquina.id,
-        maquina: maquina.nome,
-        iniciadoEm: new Date().toISOString(),
-      });
-    }
 
     try {
       await fetch(`/api/maquinas/${maquinaId}`, {
@@ -639,22 +722,32 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       isBloqueio: Boolean(maquinaAlvo.isBloqueio),
     };
 
-    // Se a máquina estava com lote de bloqueio ativo, conclui no Firestore
+    // Se a máquina estava com lote de bloqueio ativo, conclui no Firestore e no estado local
     if (maquinaAlvo.isBloqueio || maquinaAlvo.loteBloqueioId) {
       const bId = maquinaAlvo.loteBloqueioId;
-      const bloqueioAlvo =
-        bId && bId !== 'bloqueio-avulso'
-          ? lotesBloqueio.find((b) => b.id === bId)
-          : lotesBloqueio.find(
-              (b) =>
-                b.status === 'em_andamento' &&
-                ((maquinaAlvo.numeroLote && b.numeroLote.toLowerCase() === maquinaAlvo.numeroLote.toLowerCase()) ||
-                  b.maquinaEmUsoId === maquinaId)
-            );
+      const agoraIso = agora.toISOString();
 
-      if (bloqueioAlvo) {
-        concluirLoteBloqueio(bloqueioAlvo.id).catch(console.warn);
-      }
+      setLotesBloqueio((prev) =>
+        prev.map((b) => {
+          const matchId = bId && bId !== 'bloqueio-avulso' && b.id === bId;
+          const matchLote =
+            maquinaAlvo.numeroLote &&
+            b.numeroLote &&
+            b.numeroLote.toUpperCase().trim() === maquinaAlvo.numeroLote.toUpperCase().trim() &&
+            b.status === 'em_andamento';
+          const matchMaq = b.maquinaEmUsoId === maquinaId && b.status === 'em_andamento';
+
+          if (matchId || matchLote || matchMaq) {
+            concluirLoteBloqueio(b.id).catch(console.warn);
+            return {
+              ...b,
+              status: 'concluido' as StatusBloqueio,
+              concluidoEm: agoraIso,
+            };
+          }
+          return b;
+        })
+      );
     }
 
     // 1. Atualização Otimista Imediata: Libera a máquina na hora na interface
