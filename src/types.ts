@@ -87,6 +87,8 @@ export interface LoteHistorico {
   horaInicio: string;
   horaTermino: string;
   duracaoMinutos: number;
+  duracaoPrevistaMinutos?: number; // Previsão do tempo de envase (ex: 17h00min)
+  duracaoRealMinutos?: number; // Tempo real decorrido entre início e término
   teveProblemaMecanico: boolean;
   dataFinalizacao: string; // YYYY-MM-DD
   observacao?: string;

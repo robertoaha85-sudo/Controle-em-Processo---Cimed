@@ -223,6 +223,8 @@ export function ouvirHistoricoEmTempoReal(
               horaInicio: d.horaInicio || '',
               horaTermino: d.horaTermino || '',
               duracaoMinutos: d.duracaoMinutos || 0,
+              duracaoPrevistaMinutos: d.duracaoPrevistaMinutos !== undefined ? d.duracaoPrevistaMinutos : (d.duracaoMinutos || 0),
+              duracaoRealMinutos: d.duracaoRealMinutos !== undefined ? d.duracaoRealMinutos : undefined,
               teveProblemaMecanico: Boolean(d.teveProblemaMecanico),
               dataFinalizacao: d.dataFinalizacao || '',
               observacao: d.observacao || '',

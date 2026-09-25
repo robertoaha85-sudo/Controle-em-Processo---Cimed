@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useState, useMemo, useCall
 import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, MembroEquipe, LoteBloqueio, StatusBloqueio } from '../types';
 import {
   calcularPrevisaoTermino,
+  calcularDuracaoRealMinutos,
   obterTempoProdutoParaMaquina,
   loteBloqueioCompativelComMaquina,
   PRODUTOS_INICIAIS,
@@ -745,6 +746,11 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     // Se já estiver livre e sem produto, não faz nada
     if (maquinaAlvo.status === 'livre' && !maquinaAlvo.produtoAtualNome) return;
 
+    const horaInicioEfetiva = maquinaAlvo.horaInicio || horaTermino;
+    const dataInicioEfetiva = maquinaAlvo.dataInicio || dataStr;
+    const duracaoPrevista = maquinaAlvo.tempoEnvaseMinutos || 0;
+    const duracaoReal = calcularDuracaoRealMinutos(horaInicioEfetiva, horaTermino, dataInicioEfetiva, dataStr);
+
     const loteLocalId = `lote-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const historicoOtimista: LoteHistorico = {
       id: loteLocalId,
@@ -754,10 +760,12 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       produtoCodigo: maquinaAlvo.produtoAtualCodigo || null,
       produtoNome: maquinaAlvo.produtoAtualNome || 'Produto Finalizado',
       numeroLote: maquinaAlvo.numeroLote || '',
-      dataInicio: maquinaAlvo.dataInicio || dataStr,
-      horaInicio: maquinaAlvo.horaInicio || horaTermino,
+      dataInicio: dataInicioEfetiva,
+      horaInicio: horaInicioEfetiva,
       horaTermino,
-      duracaoMinutos: maquinaAlvo.tempoEnvaseMinutos || 0,
+      duracaoMinutos: duracaoReal,
+      duracaoPrevistaMinutos: duracaoPrevista,
+      duracaoRealMinutos: duracaoReal,
       teveProblemaMecanico: Boolean(maquinaAlvo.teveProblemaMecanico || maquinaAlvo.status === 'problema_mecanico'),
       dataFinalizacao: dataStr,
       observacao: observacao || '',

@@ -13,16 +13,52 @@ import {
 } from 'lucide-react';
 import { LoteHistorico, Setor } from '../types';
 import { useProduction } from '../context/ProductionContext';
-import { formatarMinutosParaTexto } from '../initialData';
+import { formatarMinutosParaTexto, calcularDuracaoRealMinutos } from '../initialData';
+import { exportarHistoricoParaExcel } from '../utils/excelExport';
 
 export const HistoryTab: React.FC = () => {
-  const { historico, maquinas, excluirLoteHistorico } = useProduction();
+  const { historico, maquinas, produtos, excluirLoteHistorico } = useProduction();
 
   const [busca, setBusca] = useState('');
   const [maquinaFiltro, setMaquinaFiltro] = useState('todas');
   const [setorFiltro, setSetorFiltro] = useState<'todos' | Setor>('todos');
   const [dataFiltro, setDataFiltro] = useState('');
   const [apenasProblemas, setApenasProblemas] = useState(false);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
+
+  // Obtém o tempo previsto (previsão) e o tempo real (duração efetiva)
+  const obterTempos = (lote: LoteHistorico) => {
+    // 1. Tempo Previsto: se existir duracaoPrevistaMinutos, usa ele.
+    // Lotes antigos registravam a previsão em duracaoMinutos.
+    let tempoPrevisto = lote.duracaoPrevistaMinutos;
+    if (tempoPrevisto === undefined || tempoPrevisto === null) {
+      tempoPrevisto = lote.duracaoMinutos || 0;
+    }
+    // Se ainda for 0, tenta buscar no catálogo de produtos pelo nome ou código
+    if (!tempoPrevisto) {
+      const prod = produtos.find(
+        (p) => (lote.produtoCodigo && p.codigo === lote.produtoCodigo) || p.nome === lote.produtoNome
+      );
+      if (prod) {
+        tempoPrevisto =
+          (prod.temposPorMaquina && (prod.temposPorMaquina[lote.maquinaNome] || prod.temposPorMaquina[lote.maquinaId])) ||
+          prod.tempoEnvaseMinutos ||
+          0;
+      }
+    }
+
+    // 2. Tempo Real: se existir duracaoRealMinutos gravado, usa ele.
+    // Caso contrário, calcula dinamicamente a diferença entre horaInicio e horaTermino.
+    let tempoReal = lote.duracaoRealMinutos;
+    if (tempoReal === undefined || tempoReal === null) {
+      tempoReal = calcularDuracaoRealMinutos(lote.horaInicio, lote.horaTermino, lote.dataInicio, lote.dataFinalizacao);
+    }
+
+    return {
+      tempoPrevisto: tempoPrevisto || 0,
+      tempoReal: tempoReal !== undefined ? tempoReal : 0,
+    };
+  };
 
   // Filtra e ordena do mais recente para o mais antigo
   const historicoFiltrado = useMemo(() => {
@@ -57,26 +93,57 @@ export const HistoryTab: React.FC = () => {
       });
   }, [historico, maquinaFiltro, setorFiltro, dataFiltro, apenasProblemas, busca]);
 
-  // Exportar histórico para CSV
+  // Exportar histórico para Excel (.xlsx) formatado e estilizado
+  const handleExportarExcel = async () => {
+    if (historicoFiltrado.length === 0 || exportandoExcel) return;
+    try {
+      setExportandoExcel(true);
+      await exportarHistoricoParaExcel(historicoFiltrado, obterTempos);
+    } catch (err) {
+      console.error('Erro ao exportar planilha Excel:', err);
+    } finally {
+      setExportandoExcel(false);
+    }
+  };
+
+  // Exportar histórico para CSV (sem ID e com delimitador adequado)
   const exportarCSV = () => {
     if (historicoFiltrado.length === 0) return;
 
-    const cabecalho = ['ID', 'Data Finalização', 'Máquina', 'Setor', 'Código', 'Produto', 'Lote', 'Data Início', 'Hora Início', 'Término Real', 'Duração', 'Problema Mecânico', 'Observação'];
-    const linhas = historicoFiltrado.map((lote) => [
-      lote.id,
-      lote.dataFinalizacao,
-      `"${lote.maquinaNome}"`,
-      lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos',
-      `"${lote.produtoCodigo || ''}"`,
-      `"${lote.produtoNome.replace(/"/g, '""')}"`,
-      `"${lote.numeroLote || ''}"`,
-      lote.dataInicio || lote.dataFinalizacao,
-      lote.horaInicio,
-      lote.horaTermino,
-      `"${formatarMinutosParaTexto(lote.duracaoMinutos)}"`,
-      lote.teveProblemaMecanico ? 'SIM' : 'NÃO',
-      `"${(lote.observacao || '').replace(/"/g, '""')}"`,
-    ]);
+    const cabecalho = [
+      'Data Término',
+      'Máquina',
+      'Setor',
+      'Código',
+      'Produto',
+      'Lote',
+      'Data Início',
+      'Hora Início',
+      'Término Real',
+      'Previsão',
+      'Tempo Real',
+      'Problema Mecânico',
+      'Observação',
+    ];
+    const linhas = historicoFiltrado.map((lote) => {
+      const { tempoPrevisto, tempoReal } = obterTempos(lote);
+      const dataFormatada = lote.dataFinalizacao || lote.dataInicio || '';
+      return [
+        dataFormatada,
+        `"${lote.maquinaNome}"`,
+        lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos',
+        `"${lote.produtoCodigo || ''}"`,
+        `"${lote.produtoNome.replace(/"/g, '""')}"`,
+        `"${lote.numeroLote || ''}"`,
+        lote.dataInicio || lote.dataFinalizacao,
+        lote.horaInicio,
+        lote.horaTermino,
+        `"${formatarMinutosParaTexto(tempoPrevisto)}"`,
+        `"${formatarMinutosParaTexto(tempoReal)}"`,
+        lote.teveProblemaMecanico ? 'SIM' : 'NÃO',
+        `"${(lote.observacao || '').replace(/"/g, '""')}"`,
+      ];
+    });
 
     const conteudoCSV = [cabecalho.join(';'), ...linhas.map((l) => l.join(';'))].join('\n');
     const blob = new Blob(['\ufeff' + conteudoCSV], { type: 'text/csv;charset=utf-8;' });
@@ -106,14 +173,27 @@ export const HistoryTab: React.FC = () => {
         </div>
 
         {historicoFiltrado.length > 0 && (
-          <button
-            id="btn-exportar-csv"
-            onClick={exportarCSV}
-            className="bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 font-bold uppercase tracking-wider px-3.5 py-2 rounded text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-            <span>Exportar CSV</span>
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              id="btn-exportar-excel"
+              onClick={handleExportarExcel}
+              disabled={exportandoExcel}
+              className="bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold uppercase tracking-wider px-3.5 py-2 rounded text-xs flex items-center justify-center gap-2 shadow-md shadow-emerald-950/40 transition-all cursor-pointer disabled:opacity-50"
+              title="Baixar planilha Excel (.xlsx) formatada e colorida com larguras automáticas"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-100" />
+              <span>{exportandoExcel ? 'Gerando Planilha...' : 'Exportar Excel (.xlsx)'}</span>
+            </button>
+            <button
+              id="btn-exportar-csv"
+              onClick={exportarCSV}
+              className="bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 font-bold uppercase tracking-wider px-2.5 py-2 rounded text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              title="Exportar dados em formato de texto CSV"
+            >
+              <Download className="w-3.5 h-3.5 text-white/40" />
+              <span>CSV</span>
+            </button>
+          </div>
         )}
       </div>
 
@@ -234,7 +314,7 @@ export const HistoryTab: React.FC = () => {
                     <th className="py-2.5 px-4">Lote / Produto</th>
                     <th className="py-2.5 px-3 text-center">Início</th>
                     <th className="py-2.5 px-3 text-center">Término</th>
-                    <th className="py-2.5 px-3 text-center">Duração</th>
+                    <th className="py-2.5 px-4 text-center">Duração</th>
                     <th className="py-2.5 px-4 text-center">Problema Mecânico</th>
                     <th className="py-2.5 px-3 text-right">Ação</th>
                   </tr>
@@ -281,10 +361,31 @@ export const HistoryTab: React.FC = () => {
                       <td className="py-2.5 px-3 font-mono text-center text-xs text-white font-bold">
                         {lote.horaTermino}
                       </td>
-                      <td className="py-2.5 px-3 text-center">
-                        <span className="font-mono text-xs font-bold text-[#FFD100] bg-black/50 px-2 py-0.5 rounded border border-white/10">
-                          {formatarMinutosParaTexto(lote.duracaoMinutos)}
-                        </span>
+                      <td className="py-2.5 px-4 text-center whitespace-nowrap">
+                        {(() => {
+                          const { tempoPrevisto, tempoReal } = obterTempos(lote);
+                          return (
+                            <div className="inline-flex items-center gap-2 bg-black/60 px-2.5 py-1.5 rounded border border-white/10 shadow-sm">
+                              <div className="text-left font-mono">
+                                <span className="text-[10px] text-white/40 uppercase font-bold tracking-wider block leading-none mb-0.5">
+                                  (Previsão)
+                                </span>
+                                <span className="text-xs font-semibold text-white/80 leading-none">
+                                  {formatarMinutosParaTexto(tempoPrevisto)}
+                                </span>
+                              </div>
+                              <div className="h-5 w-px bg-white/15 mx-0.5" />
+                              <div className="text-left font-mono">
+                                <span className="text-[10px] text-[#FFD100] uppercase font-bold tracking-wider block leading-none mb-0.5">
+                                  Tempo Real
+                                </span>
+                                <span className="text-xs font-bold text-[#FFD100] leading-none">
+                                  {formatarMinutosParaTexto(tempoReal)}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td className="py-2.5 px-4 text-center">
                         {lote.teveProblemaMecanico ? (
@@ -353,7 +454,7 @@ export const HistoryTab: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 bg-black/60 p-2 rounded text-center font-mono text-xs border border-white/5">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-black/60 p-2.5 rounded text-center font-mono text-xs border border-white/5">
                   <div>
                     <div className="text-[9px] text-white/40 uppercase font-bold">Início</div>
                     <div className="text-white font-bold mt-0.5">{lote.horaInicio}</div>
@@ -362,12 +463,25 @@ export const HistoryTab: React.FC = () => {
                     <div className="text-[9px] text-white/40 uppercase font-bold">Término</div>
                     <div className="text-white font-bold mt-0.5">{lote.horaTermino}</div>
                   </div>
-                  <div>
-                    <div className="text-[9px] text-white/40 uppercase font-bold">Duração</div>
-                    <div className="text-[#FFD100] font-bold mt-0.5">
-                      {formatarMinutosParaTexto(lote.duracaoMinutos)}
-                    </div>
-                  </div>
+                  {(() => {
+                    const { tempoPrevisto, tempoReal } = obterTempos(lote);
+                    return (
+                      <>
+                        <div>
+                          <div className="text-[9px] text-white/40 uppercase font-bold">(Previsão)</div>
+                          <div className="text-white/80 font-semibold mt-0.5">
+                            {formatarMinutosParaTexto(tempoPrevisto)}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[9px] text-[#FFD100] uppercase font-bold">Tempo Real</div>
+                          <div className="text-[#FFD100] font-bold mt-0.5">
+                            {formatarMinutosParaTexto(tempoReal)}
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
                 </div>
 
                 <div className="pt-1 flex items-center justify-between text-[11px]">

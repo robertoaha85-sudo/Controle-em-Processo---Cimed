@@ -83,10 +83,10 @@ export const PRODUTOS_INICIAIS: Produto[] = [
     nome: 'BEPANTRIZ 50 MG/G POM BG 30 G',
     setor: 'semissolidos',
     linha: 'NORDEN I / NORDEN II',
-    tempoEnvaseMinutos: 678, // 11,30h em Norden 1 (11h18m)
+    tempoEnvaseMinutos: 678, // 11,30h em Norden 1 (11h18m), 5,30h em Norden 2 (330m)
     vinculos: [
       { linhaOuMaquina: 'Norden 1', tempoEnvaseMinutos: 678 },
-      { linhaOuMaquina: 'Norden 2', tempoEnvaseMinutos: 196 },
+      { linhaOuMaquina: 'Norden 2', tempoEnvaseMinutos: 330 },
     ],
     temposPorMaquina: {
       'Norden I': 678,
@@ -94,11 +94,11 @@ export const PRODUTOS_INICIAIS: Produto[] = [
       'Nordens 1': 678,
       'NORDEN I': 678,
       'm-semi-norden-1': 678,
-      'Norden II': 196,
-      'Norden 2': 196,
-      'Nordens 2': 196,
-      'NORDEN II': 196,
-      'm-semi-norden-2': 196,
+      'Norden II': 330,
+      'Norden 2': 330,
+      'Nordens 2': 330,
+      'NORDEN II': 330,
+      'm-semi-norden-2': 330,
     },
   },
   {
@@ -1534,6 +1534,43 @@ export function calcularPrevisaoTermino(horaInicio: string, minutosAdicionar: nu
   const minsFim = totalFim % 60;
 
   return `${String(horasFim).padStart(2, '0')}:${String(minsFim).padStart(2, '0')}`;
+}
+
+// Calcula a duração real em minutos entre o início e o término real do lote
+export function calcularDuracaoRealMinutos(
+  horaInicio: string,
+  horaTermino: string,
+  dataInicio?: string,
+  dataTermino?: string
+): number {
+  if (!horaInicio || !horaTermino) return 0;
+
+  // Se tivermos as datas (ex: 2026-09-25)
+  if (dataInicio && dataTermino) {
+    const horaIniLimpa = horaInicio.length === 5 ? `${horaInicio}:00` : horaInicio;
+    const horaFimLimpa = horaTermino.length === 5 ? `${horaTermino}:00` : horaTermino;
+    const dInicio = new Date(`${dataInicio}T${horaIniLimpa}`);
+    const dTermino = new Date(`${dataTermino}T${horaFimLimpa}`);
+    if (!isNaN(dInicio.getTime()) && !isNaN(dTermino.getTime())) {
+      const diffMin = Math.round((dTermino.getTime() - dInicio.getTime()) / (1000 * 60));
+      if (diffMin >= 0) return diffMin;
+    }
+  }
+
+  // Fallback baseado apenas nas horas HH:mm
+  const [hIni, mIni] = horaInicio.split(':').map(Number);
+  const [hFim, mFim] = horaTermino.split(':').map(Number);
+  if (isNaN(hIni) || isNaN(mIni) || isNaN(hFim) || isNaN(mFim)) return 0;
+
+  let totalIni = hIni * 60 + mIni;
+  let totalFim = hFim * 60 + mFim;
+
+  if (totalFim < totalIni) {
+    // Passou da meia-noite (ex: iniciou 22:00 e terminou 06:00)
+    totalFim += 24 * 60;
+  }
+
+  return Math.max(0, totalFim - totalIni);
 }
 
 function gerarVariacoesMaquina(termo?: string): string[] {

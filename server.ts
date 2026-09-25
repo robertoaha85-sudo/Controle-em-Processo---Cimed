@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { PRODUTOS_INICIAIS, MAQUINAS_INICIAIS, EQUIPES_INICIAIS } from './src/initialData.ts';
+import { PRODUTOS_INICIAIS, MAQUINAS_INICIAIS, EQUIPES_INICIAIS, calcularDuracaoRealMinutos } from './src/initialData.ts';
 import { Maquina, Produto, LoteHistorico, MembroEquipe } from './src/types.ts';
 
 // Fix for ESM/CJS compatibility
@@ -172,6 +172,12 @@ async function startServer() {
     const dataStr = agora.toISOString().split('T')[0];
 
     // Cria registro de histórico
+    const horaIniValida = maquina.horaInicio || horaAtualStr;
+    const horaFimValida = horaTermino || horaAtualStr;
+    const dataIniValida = maquina.dataInicio || dataStr;
+    const duracaoPrevista = maquina.tempoEnvaseMinutos || 0;
+    const duracaoReal = calcularDuracaoRealMinutos(horaIniValida, horaFimValida, dataIniValida, dataStr);
+
     const novoLote: LoteHistorico = {
       id: `lote-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       maquinaId: maquina.id,
@@ -180,10 +186,12 @@ async function startServer() {
       produtoCodigo: maquina.produtoAtualCodigo || null,
       produtoNome: maquina.produtoAtualNome || 'Produto não especificado',
       numeroLote: maquina.numeroLote || '',
-      dataInicio: maquina.dataInicio || dataStr,
-      horaInicio: maquina.horaInicio || horaAtualStr,
-      horaTermino: horaTermino || horaAtualStr,
-      duracaoMinutos: duracaoMinutos || maquina.tempoEnvaseMinutos || 0,
+      dataInicio: dataIniValida,
+      horaInicio: horaIniValida,
+      horaTermino: horaFimValida,
+      duracaoMinutos: duracaoReal,
+      duracaoPrevistaMinutos: duracaoPrevista,
+      duracaoRealMinutos: duracaoReal,
       teveProblemaMecanico: Boolean(maquina.teveProblemaMecanico || maquina.status === 'problema_mecanico'),
       dataFinalizacao: dataStr,
       observacao: observacao || '',
