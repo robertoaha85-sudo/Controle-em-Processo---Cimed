@@ -34,21 +34,32 @@ export async function exportarHistoricoParaExcel(
     properties: { defaultRowHeight: 22 },
   });
 
-  // Linha 1: Banner Superior Estilo Corporativo CIMED
-  worksheet.mergeCells('A1:L1');
+  // Linha 1: Banner Superior Estilo Corporativo CIMED (sem mesclagem para não bloquear filtros das colunas)
+  worksheet.getRow(1).height = 32;
+  const totalCols = 12;
+  for (let c = 1; c <= totalCols; c++) {
+    const cell = worksheet.getCell(1, c);
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FF161616' }, // Fundo preto/cinza escuro CIMED
+    };
+  }
   const titleCell = worksheet.getCell('A1');
   titleCell.value = 'CIMED & CO  —  RELATÓRIO DE HISTÓRICO DE PRODUÇÃO E ENVASE';
   titleCell.font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FFFFFFFF' } };
-  titleCell.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FF161616' }, // Fundo preto/cinza escuro CIMED
-  };
   titleCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-  worksheet.getRow(1).height = 32;
 
-  // Linha 2: Barra de Status e Metadados (Amarelo CIMED)
-  worksheet.mergeCells('A2:L2');
+  // Linha 2: Barra de Status e Metadados (Amarelo CIMED - sem mesclagem para não conflitar com AutoFilter)
+  worksheet.getRow(2).height = 20;
+  for (let c = 1; c <= totalCols; c++) {
+    const cell = worksheet.getCell(2, c);
+    cell.fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFFFD100' }, // Amarelo oficial CIMED
+    };
+  }
   const metaCell = worksheet.getCell('A2');
   const agora = new Date();
   const dataHojeBR = agora.toLocaleDateString('pt-BR');
@@ -58,18 +69,12 @@ export async function exportarHistoricoParaExcel(
 
   metaCell.value = `GERADO EM: ${dataHojeBR} ÀS ${horaHojeBR}   |   TOTAL DE LOTES: ${totalLotes}   |   LOTES COM PARADA MECÂNICA: ${totalParadas}`;
   metaCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF111111' } };
-  metaCell.fill = {
-    type: 'pattern',
-    pattern: 'solid',
-    fgColor: { argb: 'FFFFD100' }, // Amarelo oficial CIMED
-  };
   metaCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
-  worksheet.getRow(2).height = 20;
 
   // Linha 3: Espaçador visual
   worksheet.getRow(3).height = 8;
 
-  // Linha 4: Cabeçalhos da Tabela (SEM a coluna ID)
+  // Linha 4: Definição das Colunas da Tabela
   const columns = [
     { key: 'dataTermino', header: 'Data Término', minWidth: 16, align: 'center' as const },
     { key: 'maquina', header: 'Linha / Envasadora', minWidth: 22, align: 'left' as const },
@@ -85,6 +90,50 @@ export async function exportarHistoricoParaExcel(
     { key: 'observacao', header: 'Observações / Motivo', minWidth: 36, align: 'left' as const },
   ];
 
+  // Monta as linhas de dados estruturadas para a Tabela do Excel
+  const tableRows = historico.map((lote) => {
+    const { tempoPrevisto, tempoReal } = obterTempos(lote);
+    const dataFinalizacaoBR = formatarDataBR(lote.dataFinalizacao || lote.dataInicio);
+    const setorTexto = lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos';
+    const teveProblema = Boolean(lote.teveProblemaMecanico);
+    const textoPrevisao = formatarMinutosParaTexto(tempoPrevisto);
+    const textoTempoReal = formatarMinutosParaTexto(tempoReal);
+
+    return [
+      dataFinalizacaoBR,
+      lote.maquinaNome || '',
+      setorTexto,
+      lote.produtoCodigo || '-',
+      lote.produtoNome || '',
+      lote.numeroLote || '-',
+      lote.horaInicio || '-',
+      lote.horaTermino || '-',
+      textoPrevisao,
+      textoTempoReal,
+      teveProblema ? 'SIM (PARADA)' : 'NÃO',
+      lote.observacao || '-',
+    ];
+  });
+
+  // Cria a Tabela Oficial do Excel (ListObject)
+  // Isso garante que no Excel Desktop e no Excel Online as setas de filtro funcionem perfeitamente
+  worksheet.addTable({
+    name: 'HistoricoProducao',
+    ref: 'A4',
+    headerRow: true,
+    totalsRow: false,
+    style: {
+      theme: null,
+      showRowStripes: false,
+    },
+    columns: columns.map((col) => ({
+      name: col.header,
+      filterButton: true,
+    })),
+    rows: tableRows,
+  });
+
+  // Estilização corporativa premium do cabeçalho da tabela (Linha 4)
   const headerRow = worksheet.getRow(4);
   headerRow.height = 30;
 
@@ -107,36 +156,16 @@ export async function exportarHistoricoParaExcel(
     };
   });
 
-  // Linhas de Dados com espaçamento, cores alternadas e nunca exibindo '###'
-  let currentRowIndex = 5;
+  // Linhas de Dados com espaçamento, cores alternadas e formatação refinada
   historico.forEach((lote, index) => {
-    const { tempoPrevisto, tempoReal } = obterTempos(lote);
+    const currentRowIndex = 5 + index;
     const row = worksheet.getRow(currentRowIndex);
     row.height = 24;
 
     const isPar = index % 2 === 0;
     const bgCor = isPar ? 'FFFFFFFF' : 'FFF9FAFB'; // Zebra striping sutil e limpo
-
-    const dataFinalizacaoBR = formatarDataBR(lote.dataFinalizacao || lote.dataInicio);
-    const setorTexto = lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos';
     const teveProblema = Boolean(lote.teveProblemaMecanico);
-    const textoPrevisao = formatarMinutosParaTexto(tempoPrevisto);
-    const textoTempoReal = formatarMinutosParaTexto(tempoReal);
-
-    const rowData = [
-      dataFinalizacaoBR,
-      lote.maquinaNome || '',
-      setorTexto,
-      lote.produtoCodigo || '-',
-      lote.produtoNome || '',
-      lote.numeroLote || '-',
-      lote.horaInicio || '-',
-      lote.horaTermino || '-',
-      textoPrevisao,
-      textoTempoReal,
-      teveProblema ? 'SIM (PARADA)' : 'NÃO',
-      lote.observacao || '-',
-    ];
+    const rowData = tableRows[index];
 
     rowData.forEach((val, colIdx) => {
       const colDef = columns[colIdx];
@@ -187,8 +216,6 @@ export async function exportarHistoricoParaExcel(
         }
       }
     });
-
-    currentRowIndex++;
   });
 
   // Cálculo e aplicação de larguras de colunas seguras (nunca causa '###')
@@ -253,12 +280,6 @@ export async function exportarHistoricoParaExcel(
 
     worksheet.getColumn(idx + 1).width = computedWidth;
   });
-
-  // Habilitar auto-filtro na linha de cabeçalho (linha 4)
-  worksheet.autoFilter = {
-    from: { row: 4, column: 1 },
-    to: { row: currentRowIndex - 1, column: columns.length },
-  };
 
   // Gerar e iniciar o download do arquivo .xlsx
   const buffer = await workbook.xlsx.writeBuffer();

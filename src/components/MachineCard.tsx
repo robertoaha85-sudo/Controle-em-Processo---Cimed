@@ -101,7 +101,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
   }[statusEfetivo];
 
   const temProblema = statusEfetivo === 'problema_mecanico';
-  const estaAtrasado = statusEfetivo === 'atrasado';
+  const estaAtrasado = statusEfetivo === 'atrasado' || (progresso.estaAtrasado && !temProblema);
   const emLimpezaTotal = statusEfetivo === 'em_limpeza_total';
   const emLimpezaParcial = statusEfetivo === 'em_limpeza_parcial';
   const aguardandoManipulacao = statusEfetivo === 'aguardando_manipulacao';

@@ -3,6 +3,7 @@ import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, Me
 import {
   calcularPrevisaoTermino,
   calcularDuracaoRealMinutos,
+  calcularProgressoLote,
   obterTempoProdutoParaMaquina,
   loteBloqueioCompativelComMaquina,
   PRODUTOS_INICIAIS,
@@ -297,7 +298,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     [lotesBloqueio, maquinas, produtos]
   );
 
-  // Determina status efetivo (calcula 'atrasado' se ultrapassou a previsão)
+  // Determina status efetivo (calcula 'atrasado' se ultrapassou a previsão com suporte a múltiplos dias e fins de semana)
   const obterStatusEfetivo = useCallback((maquina: Maquina): StatusMaquina => {
     if (maquina.status === 'problema_mecanico') {
       return 'problema_mecanico';
@@ -316,25 +317,9 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     }
 
     // Se estiver em andamento, verifica se já passou do horário previsto
-    if (maquina.status === 'em_andamento' && maquina.horaInicio && maquina.previsaoTermino) {
-      const [hIni, mIni] = maquina.horaInicio.split(':').map(Number);
-      const [hFim, mFim] = maquina.previsaoTermino.split(':').map(Number);
-      const hAtual = horaAtual.getHours();
-      const mAtual = horaAtual.getMinutes();
-
-      let minInicioTotal = hIni * 60 + mIni;
-      let minFimTotal = hFim * 60 + mFim;
-      let minAtualTotal = hAtual * 60 + mAtual;
-
-      // Trata cruzamento de meia-noite
-      if (minFimTotal < minInicioTotal) {
-        minFimTotal += 24 * 60;
-        if (minAtualTotal < minInicioTotal) {
-          minAtualTotal += 24 * 60;
-        }
-      }
-
-      if (minAtualTotal > minFimTotal) {
+    if (maquina.status === 'em_andamento') {
+      const prog = calcularProgressoLote(maquina, horaAtual);
+      if (prog.estaAtrasado) {
         return 'atrasado';
       }
     }
@@ -342,86 +327,9 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     return 'em_andamento';
   }, [horaAtual]);
 
-  // Calcula % de progresso e tempo restante
+  // Calcula % de progresso e tempo restante com precisão de múltiplos dias / fins de semana
   const obterProgresso = useCallback((maquina: Maquina) => {
-    if (
-      maquina.status === 'livre' ||
-      maquina.status === 'em_limpeza_total' ||
-      maquina.status === 'em_limpeza_parcial' ||
-      maquina.status === 'aguardando_manipulacao' ||
-      !maquina.horaInicio ||
-      !maquina.previsaoTermino ||
-      !maquina.tempoEnvaseMinutos
-    ) {
-      let texto = 'Máquina parada / livre';
-      if (maquina.status === 'em_limpeza_total') texto = 'Em limpeza total';
-      else if (maquina.status === 'em_limpeza_parcial') texto = 'Em limpeza parcial';
-      else if (maquina.status === 'aguardando_manipulacao') texto = 'Aguardando manipulação';
-
-      return {
-        porcentagem: 0,
-        tempoRestanteTexto: texto,
-        estaAtrasado: false,
-        atrasoMinutos: 0,
-      };
-    }
-
-    const [hIni, mIni] = maquina.horaInicio.split(':').map(Number);
-    const [hFim, mFim] = maquina.previsaoTermino.split(':').map(Number);
-    const hAtual = horaAtual.getHours();
-    const mAtual = horaAtual.getMinutes();
-    const sAtual = horaAtual.getSeconds();
-
-    let minInicioTotal = hIni * 60 + mIni;
-    let minFimTotal = hFim * 60 + mFim;
-    let minAtualTotal = hAtual * 60 + mAtual + sAtual / 60;
-
-    if (minFimTotal < minInicioTotal) {
-      minFimTotal += 24 * 60;
-      if (minAtualTotal < minInicioTotal) {
-        minAtualTotal += 24 * 60;
-      }
-    }
-
-    const duracaoMin = minFimTotal - minInicioTotal;
-    const decorridoMin = minAtualTotal - minInicioTotal;
-
-    if (decorridoMin < 0) {
-      // Início agendado para o futuro
-      const faltaMin = Math.ceil(-decorridoMin);
-      return {
-        porcentagem: 0,
-        tempoRestanteTexto: `Inicia em ${faltaMin} min`,
-        estaAtrasado: false,
-        atrasoMinutos: 0,
-      };
-    }
-
-    if (decorridoMin >= duracaoMin) {
-      const atraso = Math.floor(decorridoMin - duracaoMin);
-      const horasAtraso = Math.floor(atraso / 60);
-      const minsAtraso = atraso % 60;
-      const textoAtraso = horasAtraso > 0 ? `${horasAtraso}h ${minsAtraso}min` : `${minsAtraso}min`;
-      return {
-        porcentagem: 100,
-        tempoRestanteTexto: `Atrasado há ${textoAtraso}`,
-        estaAtrasado: true,
-        atrasoMinutos: atraso,
-      };
-    }
-
-    const pct = Math.min(100, Math.max(0, (decorridoMin / duracaoMin) * 100));
-    const restante = Math.ceil(duracaoMin - decorridoMin);
-    const horasRest = Math.floor(restante / 60);
-    const minsRest = restante % 60;
-    const textoRest = horasRest > 0 ? `${horasRest}h ${minsRest}min restantes` : `${minsRest}min restantes`;
-
-    return {
-      porcentagem: Number(pct.toFixed(1)),
-      tempoRestanteTexto: textoRest,
-      estaAtrasado: false,
-      atrasoMinutos: 0,
-    };
+    return calcularProgressoLote(maquina, horaAtual);
   }, [horaAtual]);
 
   // Resumo de contagem das máquinas
@@ -581,12 +489,14 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       }
     }
 
+    const dataInicioValida = dataInicio || new Date().toISOString().split('T')[0];
+
     const payload: Partial<Maquina> = {
       status: 'em_andamento' as const,
       produtoAtualId: produto.id,
       produtoAtualCodigo: produto.codigo || null,
       produtoAtualNome: produto.nome,
-      dataInicio,
+      dataInicio: dataInicioValida,
       horaInicio,
       numeroLote,
       previsaoTermino,
@@ -714,10 +624,14 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
 
     const novaPrevisao = calcularPrevisaoTermino(novaHora, maquina.tempoEnvaseMinutos);
 
-    const payload = {
+    const payload: Partial<Maquina> = {
       horaInicio: novaHora,
       previsaoTermino: novaPrevisao,
     };
+
+    if (!maquina.dataInicio) {
+      payload.dataInicio = new Date().toISOString().split('T')[0];
+    }
 
     setMaquinas((prev) =>
       prev.map((m) => (m.id === maquinaId ? { ...m, ...payload } : m))

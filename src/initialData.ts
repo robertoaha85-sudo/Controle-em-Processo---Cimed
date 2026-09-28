@@ -1573,6 +1573,200 @@ export function calcularDuracaoRealMinutos(
   return Math.max(0, totalFim - totalIni);
 }
 
+export interface ProgressoLoteResult {
+  porcentagem: number;
+  tempoRestanteTexto: string;
+  estaAtrasado: boolean;
+  atrasoMinutos: number;
+  decorridoMinutos: number;
+  duracaoTotalMinutos: number;
+}
+
+/**
+ * Calcula com precisão absoluta de calendário e relógio o progresso do lote.
+ * Suporta lotes que atravessam a meia-noite, lotes em fins de semana e múltiplos dias,
+ * garantindo que qualquer lote ultrapassado fique 100% preenchido com status ATRASADO.
+ */
+export function calcularProgressoLote(
+  maquina: Partial<Maquina>,
+  horaAtual: Date = new Date()
+): ProgressoLoteResult {
+  if (
+    maquina.status === 'livre' ||
+    maquina.status === 'em_limpeza_total' ||
+    maquina.status === 'em_limpeza_parcial' ||
+    maquina.status === 'aguardando_manipulacao' ||
+    !maquina.horaInicio
+  ) {
+    let texto = 'Máquina parada / livre';
+    if (maquina.status === 'em_limpeza_total') texto = 'Em limpeza total';
+    else if (maquina.status === 'em_limpeza_parcial') texto = 'Em limpeza parcial';
+    else if (maquina.status === 'aguardando_manipulacao') texto = 'Aguardando manipulação';
+
+    return {
+      porcentagem: 0,
+      tempoRestanteTexto: texto,
+      estaAtrasado: false,
+      atrasoMinutos: 0,
+      decorridoMinutos: 0,
+      duracaoTotalMinutos: 0,
+    };
+  }
+
+  // 1. Extração da hora de início (HH:mm)
+  const horaPartes = maquina.horaInicio.split(':').map(Number);
+  if (horaPartes.length < 2 || isNaN(horaPartes[0]) || isNaN(horaPartes[1])) {
+    return {
+      porcentagem: 0,
+      tempoRestanteTexto: 'Horário inválido',
+      estaAtrasado: false,
+      atrasoMinutos: 0,
+      decorridoMinutos: 0,
+      duracaoTotalMinutos: 0,
+    };
+  }
+  const [hIni, mIni] = horaPartes;
+
+  // 2. Extração da data de início com suporte a múltiplos formatos e fallback
+  let ano = horaAtual.getFullYear();
+  let mes = horaAtual.getMonth(); // 0 a 11
+  let dia = horaAtual.getDate();
+  let dataDefinida = false;
+
+  if (maquina.dataInicio && typeof maquina.dataInicio === 'string') {
+    const limpo = maquina.dataInicio.trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(limpo)) {
+      const [y, m, d] = limpo.split('-').map(Number);
+      ano = y;
+      mes = m - 1;
+      dia = d;
+      dataDefinida = true;
+    } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(limpo)) {
+      const [d, m, y] = limpo.split('/').map(Number);
+      ano = y;
+      mes = m - 1;
+      dia = d;
+      dataDefinida = true;
+    }
+  }
+
+  // Se não houver dataInicio explícita, verifica se ultimaAtualizacao possui data ISO válida
+  if (!dataDefinida && maquina.ultimaAtualizacao) {
+    const match = String(maquina.ultimaAtualizacao).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      ano = Number(match[1]);
+      mes = Number(match[2]) - 1;
+      dia = Number(match[3]);
+      dataDefinida = true;
+    }
+  }
+
+  // Se mesmo assim não houver data explícita e o lote já está em andamento,
+  // mas a hora de início no relógio é maior que a hora atual (ex: começou 14:00 na sexta e agora é 09:00 na segunda),
+  // infere que foi iniciado em dia anterior para não marcar erroneamente como 'futuro'.
+  if (!dataDefinida && (maquina.status === 'em_andamento' || maquina.status === 'problema_mecanico')) {
+    const minIniHoje = hIni * 60 + mIni;
+    const minAtualHoje = horaAtual.getHours() * 60 + horaAtual.getMinutes();
+    if (minAtualHoje < minIniHoje) {
+      const dAnterior = new Date(ano, mes, dia - 1);
+      ano = dAnterior.getFullYear();
+      mes = dAnterior.getMonth();
+      dia = dAnterior.getDate();
+    }
+  }
+
+  const inicioDate = new Date(ano, mes, dia, hIni, mIni, 0, 0);
+
+  // 3. Determinação da duração total prevista (em minutos)
+  let duracaoMin = 0;
+  if (maquina.tempoEnvaseMinutos && maquina.tempoEnvaseMinutos > 0) {
+    duracaoMin = maquina.tempoEnvaseMinutos;
+  } else if (maquina.previsaoTermino) {
+    const [hFim, mFim] = maquina.previsaoTermino.split(':').map(Number);
+    if (!isNaN(hFim) && !isNaN(mFim)) {
+      let diff = (hFim * 60 + mFim) - (hIni * 60 + mIni);
+      if (diff <= 0) diff += 24 * 60;
+      duracaoMin = diff;
+    }
+  }
+
+  if (duracaoMin <= 0) {
+    duracaoMin = 60; // fallback padrão de 1 hora
+  }
+
+  // Momento exato em que o lote deveria terminar
+  const fimDate = new Date(inicioDate.getTime() + duracaoMin * 60 * 1000);
+  const decorridoMs = horaAtual.getTime() - inicioDate.getTime();
+  const decorridoMin = decorridoMs / (60 * 1000);
+
+  // Caso: Agendado para o futuro
+  if (decorridoMin < 0) {
+    const faltaMin = Math.ceil(-decorridoMin);
+    const horasFalta = Math.floor(faltaMin / 60);
+    const minsFalta = faltaMin % 60;
+    const textoFalta = horasFalta > 0 ? `${horasFalta}h ${minsFalta}min` : `${minsFalta}min`;
+    return {
+      porcentagem: 0,
+      tempoRestanteTexto: `Inicia em ${textoFalta}`,
+      estaAtrasado: false,
+      atrasoMinutos: 0,
+      decorridoMinutos: decorridoMin,
+      duracaoTotalMinutos: duracaoMin,
+    };
+  }
+
+  // Caso: ATRASADO (decorrido maior ou igual à duração prevista)
+  if (decorridoMin >= duracaoMin || horaAtual.getTime() >= fimDate.getTime()) {
+    const atraso = Math.floor(decorridoMin - duracaoMin);
+    const dias = Math.floor(atraso / 1440);
+    const horasRest = Math.floor((atraso % 1440) / 60);
+    const minsRest = atraso % 60;
+
+    let textoAtraso = '';
+    if (dias > 0) {
+      textoAtraso = horasRest > 0 ? `${dias}d ${horasRest}h ${minsRest}min` : `${dias}d ${minsRest}min`;
+    } else if (horasRest > 0) {
+      textoAtraso = `${horasRest}h ${minsRest}min`;
+    } else {
+      textoAtraso = `${minsRest}min`;
+    }
+
+    return {
+      porcentagem: 100, // Barra 100% cheia quando atrasado
+      tempoRestanteTexto: `Atrasado há ${textoAtraso}`,
+      estaAtrasado: true,
+      atrasoMinutos: atraso,
+      decorridoMinutos: decorridoMin,
+      duracaoTotalMinutos: duracaoMin,
+    };
+  }
+
+  // Caso: Em andamento normal dentro do prazo
+  const pct = Math.min(99.9, Math.max(0, (decorridoMin / duracaoMin) * 100));
+  const restante = Math.ceil(duracaoMin - decorridoMin);
+  const diasRest = Math.floor(restante / 1440);
+  const horasRest = Math.floor((restante % 1440) / 60);
+  const minsRest = restante % 60;
+
+  let textoRest = '';
+  if (diasRest > 0) {
+    textoRest = `${diasRest}d ${horasRest}h restantes`;
+  } else if (horasRest > 0) {
+    textoRest = `${horasRest}h ${minsRest}min restantes`;
+  } else {
+    textoRest = `${minsRest}min restantes`;
+  }
+
+  return {
+    porcentagem: Number(pct.toFixed(1)),
+    tempoRestanteTexto: textoRest,
+    estaAtrasado: false,
+    atrasoMinutos: 0,
+    decorridoMinutos: decorridoMin,
+    duracaoTotalMinutos: duracaoMin,
+  };
+}
+
 function gerarVariacoesMaquina(termo?: string): string[] {
   if (!termo) return [];
   const limpo = termo.toLowerCase().trim();
