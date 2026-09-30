@@ -28,6 +28,11 @@ import {
   restaurarTodasMaquinasFirestore,
   obterMaquinasLocais,
   obterHistoricoLocal,
+  obterProdutosLocais,
+  salvarProdutosLocais,
+  salvarProdutoFirestore,
+  excluirProdutoFirestore,
+  ouvirProdutosEmTempoReal,
 } from '../services/realtimeSyncService';
 
 interface ProductionContextType {
@@ -98,7 +103,7 @@ const ProductionContext = createContext<ProductionContextType | null>(null);
 
 export function ProductionProvider({ children }: { children: React.ReactNode }) {
   const [maquinas, setMaquinas] = useState<Maquina[]>(obterMaquinasLocais);
-  const [produtos, setProdutos] = useState<Produto[]>(PRODUTOS_INICIAIS);
+  const [produtos, setProdutos] = useState<Produto[]>(obterProdutosLocais);
   const [historico, setHistorico] = useState<LoteHistorico[]>(obterHistoricoLocal);
   const [equipes, setEquipes] = useState<MembroEquipe[]>(EQUIPES_INICIAIS);
   const [lotesBloqueio, setLotesBloqueio] = useState<LoteBloqueio[]>(obterLotesBloqueioLocais);
@@ -135,6 +140,15 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   useEffect(() => {
     const cancelar = ouvirHistoricoEmTempoReal((novoHistorico) => {
       setHistorico(novoHistorico);
+      setUltimaSincronizacao(new Date());
+    });
+    return () => cancelar();
+  }, []);
+
+  // 3. Sincronização em tempo real dos Produtos no Firestore (com fallback resiliente)
+  useEffect(() => {
+    const cancelar = ouvirProdutosEmTempoReal((novosProdutos) => {
+      setProdutos(novosProdutos);
       setUltimaSincronizacao(new Date());
     });
     return () => cancelar();
@@ -776,30 +790,121 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Gerenciamento de produtos
+  // Gerenciamento de produtos com atualização otimista instantânea e sincronização Firestore
   const adicionarProduto = async (novo: Omit<Produto, 'id'>): Promise<Produto> => {
-    const res = await fetch('/api/produtos', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(novo),
+    const id = `prod-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    const codigo = novo.codigo ? String(novo.codigo).trim() : `P${Date.now().toString().slice(-6)}`;
+    const tempoTotal = Number(novo.tempoEnvaseMinutos) || 60;
+    const linhaStr = String(novo.linha || 'NORDEN I').trim();
+
+    const novoProduto: Produto = {
+      id,
+      codigo,
+      nome: String(novo.nome).trim().toUpperCase(),
+      setor: novo.setor,
+      linha: linhaStr,
+      tempoEnvaseMinutos: tempoTotal,
+      vinculos:
+        novo.vinculos && novo.vinculos.length > 0
+          ? novo.vinculos
+          : [{ linhaOuMaquina: linhaStr, tempoEnvaseMinutos: tempoTotal }],
+      temposPorMaquina:
+        novo.temposPorMaquina && Object.keys(novo.temposPorMaquina).length > 0
+          ? novo.temposPorMaquina
+          : { [linhaStr]: tempoTotal },
+    };
+
+    // 1. Atualização Otimista Imediata: adiciona no estado local e salva no cache
+    setProdutos((prev) => {
+      const lista = Array.isArray(prev) ? prev : [];
+      const atualizados = [...lista.filter((p) => p.id !== id), novoProduto];
+      salvarProdutosLocais(atualizados);
+      return atualizados;
     });
-    const criado = await res.json();
-    setProdutos((prev) => [...prev, criado]);
-    return criado;
+
+    // 2. Toca som de sucesso e sincroniza no Firestore
+    tocarSomSucesso();
+    salvarProdutoFirestore(novoProduto).catch((err) =>
+      console.warn('Erro ao salvar produto no Firestore:', err)
+    );
+
+    // 3. Persistência na API local com fallback resiliente
+    try {
+      const res = await fetch('/api/produtos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(novoProduto),
+      });
+      if (res.ok) {
+        const criadoServidor = await res.json();
+        if (criadoServidor && criadoServidor.id) {
+          setProdutos((prev) => {
+            const lista = Array.isArray(prev) ? prev : [];
+            const atualizados = lista.map((p) => (p.id === id ? { ...p, ...criadoServidor } : p));
+            salvarProdutosLocais(atualizados);
+            return atualizados;
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Produto gravado no Firestore e cache local (API em fallback):', err);
+    }
+
+    return novoProduto;
   };
 
   const editarProduto = async (id: string, dados: Partial<Produto>) => {
-    setProdutos((prev) => prev.map((p) => (p.id === id ? { ...p, ...dados } : p)));
-    await fetch(`/api/produtos/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(dados),
+    let produtoAtualizado: Produto | undefined;
+
+    setProdutos((prev) => {
+      const lista = Array.isArray(prev) ? prev : [];
+      const atualizados = lista.map((p) => {
+        if (p.id === id) {
+          produtoAtualizado = { ...p, ...dados };
+          return produtoAtualizado;
+        }
+        return p;
+      });
+      salvarProdutosLocais(atualizados);
+      return atualizados;
     });
+
+    tocarSomSucesso();
+
+    if (produtoAtualizado) {
+      salvarProdutoFirestore(produtoAtualizado).catch((err) =>
+        console.warn('Erro ao atualizar produto no Firestore:', err)
+      );
+    }
+
+    try {
+      await fetch(`/api/produtos/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados),
+      });
+    } catch (err) {
+      console.warn('Atualização salva no Firestore e cache local (API em fallback):', err);
+    }
   };
 
   const excluirProduto = async (id: string) => {
-    setProdutos((prev) => prev.filter((p) => p.id !== id));
-    await fetch(`/api/produtos/${id}`, { method: 'DELETE' });
+    setProdutos((prev) => {
+      const lista = Array.isArray(prev) ? prev : [];
+      const atualizados = lista.filter((p) => p.id !== id);
+      salvarProdutosLocais(atualizados);
+      return atualizados;
+    });
+
+    excluirProdutoFirestore(id).catch((err) =>
+      console.warn('Erro ao excluir produto no Firestore:', err)
+    );
+
+    try {
+      await fetch(`/api/produtos/${id}`, { method: 'DELETE' });
+    } catch (err) {
+      console.warn('Exclusão realizada no Firestore e cache local (API em fallback):', err);
+    }
   };
 
   const excluirLoteHistorico = async (id: string) => {

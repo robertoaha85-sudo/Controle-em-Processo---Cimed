@@ -1772,6 +1772,13 @@ function gerarVariacoesMaquina(termo?: string): string[] {
   const limpo = termo.toLowerCase().trim();
   const variacoes = new Set<string>([limpo]);
 
+  // Se o termo contiver barra ou múltiplos nomes (ex: 'NORDEN I / NORDEN II')
+  if (limpo.includes('/')) {
+    limpo.split('/').forEach((parte) => {
+      gerarVariacoesMaquina(parte).forEach((v) => variacoes.add(v));
+    });
+  }
+
   // Equivalências de Norden 1..4 (romano e arábico, singular e plural)
   if (limpo.includes('norden')) {
     if (limpo.includes('iv') || limpo.includes(' 4') || limpo.endsWith('4')) {
@@ -1780,19 +1787,34 @@ function gerarVariacoesMaquina(termo?: string): string[] {
       variacoes.add('nordens 4');
       variacoes.add('nordens iv');
       variacoes.add('m-semi-norden-4');
-    } else if (limpo.includes('iii') || limpo.includes(' 3') || limpo.endsWith('3')) {
+    }
+    if (limpo.includes('iii') || limpo.includes(' 3') || limpo.endsWith('3')) {
       variacoes.add('norden iii');
       variacoes.add('norden 3');
       variacoes.add('nordens 3');
       variacoes.add('nordens iii');
       variacoes.add('m-semi-norden-3');
-    } else if (limpo.includes('ii') || limpo.includes(' 2') || limpo.endsWith('2')) {
+    }
+    if (
+      limpo.includes('ii') ||
+      limpo.includes(' 2') ||
+      limpo.endsWith('2') ||
+      limpo.includes('norden ii') ||
+      limpo.includes('norden 2')
+    ) {
       variacoes.add('norden ii');
       variacoes.add('norden 2');
       variacoes.add('nordens 2');
       variacoes.add('nordens ii');
       variacoes.add('m-semi-norden-2');
-    } else if (limpo.includes('i') || limpo.includes(' 1') || limpo.endsWith('1')) {
+    }
+    if (
+      limpo.includes('norden i') ||
+      limpo.includes('norden 1') ||
+      /\b(i|1)\b/.test(limpo) ||
+      limpo.endsWith('1') ||
+      limpo.endsWith('i')
+    ) {
       variacoes.add('norden i');
       variacoes.add('norden 1');
       variacoes.add('nordens 1');

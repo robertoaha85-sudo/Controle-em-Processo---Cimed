@@ -235,8 +235,12 @@ async function startServer() {
       return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
     }
 
+    const idFinal =
+      (req.body.id && String(req.body.id).trim()) ||
+      `prod-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+
     const novoProduto: Produto = {
-      id: `prod-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      id: idFinal,
       codigo: codigo ? String(codigo).trim() : `P${Date.now().toString().slice(-6)}`,
       nome: String(nome).trim().toUpperCase(),
       setor,
@@ -246,7 +250,12 @@ async function startServer() {
       temposPorMaquina: temposPorMaquina || {},
     };
 
-    store.produtos.push(novoProduto);
+    const idxExistente = store.produtos.findIndex((p) => p.id === idFinal);
+    if (idxExistente >= 0) {
+      store.produtos[idxExistente] = novoProduto;
+    } else {
+      store.produtos.push(novoProduto);
+    }
     salvarDados(store);
     broadcast('produtos_updated', store.produtos);
     res.status(201).json(novoProduto);

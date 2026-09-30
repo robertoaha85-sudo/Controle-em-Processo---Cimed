@@ -49,12 +49,15 @@ export const ProductsTab: React.FC = () => {
   const [produtoEmEdicao, setProdutoEmEdicao] = useState<Produto | null>(null);
 
   // Form State
+  const [codigoForm, setCodigoForm] = useState('');
   const [nomeForm, setNomeForm] = useState('');
   const [setorForm, setSetorForm] = useState<Setor>('semissolidos');
   const [linhaForm, setLinhaForm] = useState('NORDEN I');
   const [horasForm, setHorasForm] = useState(6);
   const [minutosForm, setMinutosForm] = useState(15);
   const [salvando, setSalvando] = useState(false);
+  const [erroForm, setErroForm] = useState<string | null>(null);
+  const [sucessoMsg, setSucessoMsg] = useState<string | null>(null);
 
   // Confirmação de exclusão
   const [confirmandoExcluirId, setConfirmandoExcluirId] = useState<string | null>(null);
@@ -140,50 +143,109 @@ export const ProductsTab: React.FC = () => {
   // Abre modal para novo produto
   const handleNovo = () => {
     setProdutoEmEdicao(null);
+    setCodigoForm('');
     setNomeForm('');
-    setSetorForm('semissolidos');
-    setLinhaForm('NORDEN I');
+    setSetorForm(setorFiltro !== 'todos' ? setorFiltro : 'semissolidos');
+    setLinhaForm(
+      linhaFiltro !== 'todas'
+        ? linhaFiltro
+        : setorFiltro === 'liquidos'
+        ? 'CAM'
+        : 'NORDEN I'
+    );
     setHorasForm(6);
     setMinutosForm(15);
+    setErroForm(null);
     setModalAberto(true);
   };
 
   // Abre modal para editar produto
   const handleEditar = (produto: Produto) => {
     setProdutoEmEdicao(produto);
+    setCodigoForm(produto.codigo || '');
     setNomeForm(produto.nome);
     setSetorForm(produto.setor);
     setLinhaForm(produto.linha);
-    setHorasForm(Math.floor(produto.tempoEnvaseMinutos / 60));
-    setMinutosForm(produto.tempoEnvaseMinutos % 60);
+    setHorasForm(Math.floor((produto.tempoEnvaseMinutos || 60) / 60));
+    setMinutosForm((produto.tempoEnvaseMinutos || 60) % 60);
+    setErroForm(null);
     setModalAberto(true);
   };
 
   // Salvar formulário
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!nomeForm.trim()) return;
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setErroForm(null);
+
+    const nomeLimpo = nomeForm.trim();
+    if (!nomeLimpo) {
+      setErroForm('Por favor, informe o nome do medicamento / produto.');
+      return;
+    }
+
+    const linhaLimpa = linhaForm.trim() || (setorForm === 'liquidos' ? 'CAM' : 'NORDEN I');
+    const horasNum = Number(horasForm) || 0;
+    const minutosNum = Number(minutosForm) || 0;
+    const tempoTotalMinutos = horasNum * 60 + minutosNum;
+
+    if (tempoTotalMinutos <= 0) {
+      setErroForm('O tempo médio de envase deve ser de pelo menos 1 minuto.');
+      return;
+    }
 
     setSalvando(true);
-    const tempoTotalMinutos = horasForm * 60 + minutosForm;
 
     try {
+      const codigoLimpo = codigoForm.trim();
       if (produtoEmEdicao) {
         await editarProduto(produtoEmEdicao.id, {
-          nome: nomeForm.trim().toUpperCase(),
+          codigo: codigoLimpo || produtoEmEdicao.codigo || `P${Date.now().toString().slice(-6)}`,
+          nome: nomeLimpo.toUpperCase(),
           setor: setorForm,
-          linha: linhaForm.trim(),
+          linha: linhaLimpa,
           tempoEnvaseMinutos: tempoTotalMinutos,
+          vinculos: [
+            { linhaOuMaquina: linhaLimpa, tempoEnvaseMinutos: tempoTotalMinutos },
+            ...(produtoEmEdicao.vinculos || []).filter(
+              (v) => v.linhaOuMaquina.toLowerCase() !== linhaLimpa.toLowerCase()
+            ),
+          ],
+          temposPorMaquina: {
+            ...(produtoEmEdicao.temposPorMaquina || {}),
+            [linhaLimpa]: tempoTotalMinutos,
+          },
         });
+        setSucessoMsg(`Produto "${nomeLimpo.toUpperCase()}" atualizado com sucesso!`);
       } else {
         await adicionarProduto({
-          nome: nomeForm.trim().toUpperCase(),
+          codigo: codigoLimpo || `P${Date.now().toString().slice(-6)}`,
+          nome: nomeLimpo.toUpperCase(),
           setor: setorForm,
-          linha: linhaForm.trim(),
+          linha: linhaLimpa,
           tempoEnvaseMinutos: tempoTotalMinutos,
+          vinculos: [{ linhaOuMaquina: linhaLimpa, tempoEnvaseMinutos: tempoTotalMinutos }],
+          temposPorMaquina: { [linhaLimpa]: tempoTotalMinutos },
         });
+        setSucessoMsg(`Produto "${nomeLimpo.toUpperCase()}" cadastrado com sucesso!`);
       }
+
+      // Fecha o modal e limpa o formulário
       setModalAberto(false);
+      setNomeForm('');
+      setCodigoForm('');
+
+      // Garante que o produto recém adicionado fique visível no catálogo
+      setSetorFiltro(setorForm);
+      setLinhaFiltro('todas');
+      setBusca('');
+
+      setTimeout(() => setSucessoMsg(null), 4500);
+    } catch (err: any) {
+      console.error('Erro ao salvar produto:', err);
+      setErroForm(err?.message || 'Erro ao processar o cadastro do produto. Tente novamente.');
     } finally {
       setSalvando(false);
     }
@@ -194,6 +256,22 @@ export const ProductsTab: React.FC = () => {
 
   return (
     <div id="produtos-tab-content" className="space-y-5">
+      {/* Alerta de Sucesso */}
+      {sucessoMsg && (
+        <div className="bg-emerald-950/80 border border-emerald-500 text-emerald-200 px-4 py-2.5 rounded flex items-center justify-between shadow-lg">
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <span>{sucessoMsg}</span>
+          </div>
+          <button
+            onClick={() => setSucessoMsg(null)}
+            className="p-1 hover:bg-emerald-800/40 rounded text-emerald-300"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Cabeçalho da Aba */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-[#161616] border border-white/10 border-l-4 border-l-[#FFD100] p-4 sm:p-5 rounded shadow-lg">
         <div>
@@ -486,19 +564,47 @@ export const ProductsTab: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} className="p-4 space-y-3.5">
+            <form onSubmit={handleSubmit} noValidate className="p-4 space-y-3.5">
+              {/* Alerta de Erro de Validação */}
+              {erroForm && (
+                <div className="bg-red-950/90 border border-red-500/80 text-red-200 text-xs px-3 py-2 rounded flex items-start gap-2 shadow">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
+                  <span className="leading-snug">{erroForm}</span>
+                </div>
+              )}
+
+              {/* Código do Medicamento / Produto */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-white/60">
+                    Código do Produto (Cód. SAP / Cimed)
+                  </label>
+                  <span className="text-[9px] text-white/40 uppercase">Opcional</span>
+                </div>
+                <input
+                  id="input-produto-codigo"
+                  type="text"
+                  placeholder="Ex: 502014"
+                  value={codigoForm}
+                  onChange={(e) => setCodigoForm(e.target.value)}
+                  className="w-full bg-black/60 border border-white/10 text-white font-mono text-xs px-3 py-2 rounded focus:outline-none focus:border-[#FFD100]"
+                />
+              </div>
+
               {/* Nome do Produto */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1">
-                  Nome do Medicamento / Produto
+                  Nome do Medicamento / Produto <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="input-produto-nome"
                   type="text"
-                  required
                   placeholder="Ex: ACICLOVIR 50MG/G CREM BG 10G"
                   value={nomeForm}
-                  onChange={(e) => setNomeForm(e.target.value)}
+                  onChange={(e) => {
+                    setNomeForm(e.target.value);
+                    if (erroForm) setErroForm(null);
+                  }}
                   className="w-full bg-black/60 border border-white/10 text-white text-xs px-3 py-2 rounded focus:outline-none focus:border-[#FFD100]"
                 />
               </div>
@@ -513,11 +619,13 @@ export const ProductsTab: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setSetorForm('semissolidos');
-                      if (linhaForm === 'Líquidos Geral') setLinhaForm('NORDEN I');
+                      if (linhaForm === 'CAM' || linhaForm === 'Gotas' || linhaForm === 'Xarope' || linhaForm === 'Externo' || linhaForm === 'Epativan') {
+                        setLinhaForm('NORDEN I');
+                      }
                     }}
-                    className={`py-2 px-3 rounded text-xs font-bold uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 ${
+                    className={`py-2 px-3 rounded text-xs font-bold uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 cursor-pointer ${
                       setorForm === 'semissolidos'
-                        ? 'bg-[#FFD100] text-black border-[#FFD100]'
+                        ? 'bg-[#FFD100] text-black border-[#FFD100] font-black'
                         : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'
                     }`}
                   >
@@ -529,11 +637,13 @@ export const ProductsTab: React.FC = () => {
                     type="button"
                     onClick={() => {
                       setSetorForm('liquidos');
-                      setLinhaForm('Líquidos Geral');
+                      if (linhaForm.startsWith('NORDEN') || linhaForm.startsWith('Norden')) {
+                        setLinhaForm('CAM');
+                      }
                     }}
-                    className={`py-2 px-3 rounded text-xs font-bold uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 ${
+                    className={`py-2 px-3 rounded text-xs font-bold uppercase tracking-wider transition-all border flex items-center justify-center gap-1.5 cursor-pointer ${
                       setorForm === 'liquidos'
-                        ? 'bg-[#FFD100] text-black border-[#FFD100]'
+                        ? 'bg-[#FFD100] text-black border-[#FFD100] font-black'
                         : 'bg-white/5 border-white/10 text-white/60 hover:border-white/30'
                     }`}
                   >
@@ -546,15 +656,17 @@ export const ProductsTab: React.FC = () => {
               {/* Linha de Produção */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1">
-                  Linha de Produção / Máquina
+                  Linha de Produção / Máquina Principal <span className="text-red-400">*</span>
                 </label>
                 <input
                   id="input-produto-linha"
                   type="text"
-                  required
                   placeholder="Ex: Norden I, Norden II, CAM, Gotas, Xarope..."
                   value={linhaForm}
-                  onChange={(e) => setLinhaForm(e.target.value)}
+                  onChange={(e) => {
+                    setLinhaForm(e.target.value);
+                    if (erroForm) setErroForm(null);
+                  }}
                   className="w-full bg-black/60 border border-white/10 text-white text-xs px-3 py-2 rounded focus:outline-none focus:border-[#FFD100]"
                 />
                 <div className="flex flex-wrap gap-1 mt-1.5">
@@ -566,7 +678,7 @@ export const ProductsTab: React.FC = () => {
                       key={sug}
                       type="button"
                       onClick={() => setLinhaForm(sug)}
-                      className="text-[9px] font-mono bg-white/5 hover:bg-[#FFD100] hover:text-black text-white/60 px-2 py-0.5 rounded border border-white/10 transition-colors uppercase"
+                      className="text-[9px] font-mono bg-white/5 hover:bg-[#FFD100] hover:text-black text-white/60 px-2 py-0.5 rounded border border-white/10 transition-colors uppercase cursor-pointer"
                     >
                       {sug}
                     </button>
@@ -577,7 +689,7 @@ export const ProductsTab: React.FC = () => {
               {/* Tempo Médio de Envase (Horas + Minutos) */}
               <div>
                 <label className="block text-[10px] font-bold uppercase tracking-wider text-white/60 mb-1">
-                  Tempo Médio de Envase
+                  Tempo Médio de Envase <span className="text-red-400">*</span>
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   <div>
@@ -586,9 +698,12 @@ export const ProductsTab: React.FC = () => {
                       id="input-produto-horas"
                       type="number"
                       min="0"
-                      max="72"
                       value={horasForm}
-                      onChange={(e) => setHorasForm(Math.max(0, parseInt(e.target.value, 10) || 0))}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setHorasForm(isNaN(val) ? 0 : Math.max(0, val));
+                        if (erroForm) setErroForm(null);
+                      }}
                       className="w-full bg-black/60 border border-white/10 text-white font-mono text-center font-bold text-sm px-2 py-1.5 rounded focus:outline-none focus:border-[#FFD100]"
                     />
                   </div>
@@ -601,7 +716,11 @@ export const ProductsTab: React.FC = () => {
                       min="0"
                       max="59"
                       value={minutosForm}
-                      onChange={(e) => setMinutosForm(Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)))}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setMinutosForm(isNaN(val) ? 0 : Math.max(0, Math.min(59, val)));
+                        if (erroForm) setErroForm(null);
+                      }}
                       className="w-full bg-black/60 border border-white/10 text-white font-mono text-center font-bold text-sm px-2 py-1.5 rounded focus:outline-none focus:border-[#FFD100]"
                     />
                   </div>
@@ -610,9 +729,9 @@ export const ProductsTab: React.FC = () => {
                 <div className="mt-2 text-center text-xs bg-black/50 p-2 rounded border border-white/10 text-white/80">
                   Total calculado:{' '}
                   <strong className="text-[#FFD100] font-mono text-xs font-bold">
-                    {formatarMinutosParaTexto(horasForm * 60 + minutosForm)}
+                    {formatarMinutosParaTexto(Number(horasForm) * 60 + Number(minutosForm))}
                   </strong>{' '}
-                  ({horasForm * 60 + minutosForm} min)
+                  ({Number(horasForm) * 60 + Number(minutosForm)} min)
                 </div>
               </div>
 
@@ -621,17 +740,17 @@ export const ProductsTab: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setModalAberto(false)}
-                  className="px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white bg-white/5 border border-white/10 rounded transition-colors"
+                  className="px-3 py-2 text-xs font-bold uppercase tracking-wider text-white/60 hover:text-white bg-white/5 border border-white/10 rounded transition-colors cursor-pointer"
                 >
                   Cancelar
                 </button>
                 <button
                   id="btn-salvar-produto"
                   type="submit"
-                  disabled={salvando || !nomeForm.trim()}
-                  className="bg-[#FFD100] hover:bg-[#ffe043] disabled:opacity-50 text-black font-black uppercase tracking-wider px-4 py-1.5 rounded text-xs flex items-center gap-1.5 shadow cursor-pointer"
+                  disabled={salvando}
+                  className="bg-[#FFD100] hover:bg-[#ffe043] disabled:opacity-50 text-black font-black uppercase tracking-wider px-5 py-2 rounded text-xs flex items-center gap-1.5 shadow transition-all active:scale-95 cursor-pointer"
                 >
-                  <Check className="w-3.5 h-3.5" />
+                  <Check className="w-4 h-4" />
                   <span>{salvando ? 'Salvando...' : produtoEmEdicao ? 'Atualizar' : 'Cadastrar'}</span>
                 </button>
               </div>

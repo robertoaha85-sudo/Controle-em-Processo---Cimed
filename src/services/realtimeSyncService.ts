@@ -10,13 +10,15 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Maquina, LoteHistorico } from '../types';
-import { MAQUINAS_INICIAIS } from '../initialData';
+import { Maquina, LoteHistorico, Produto } from '../types';
+import { MAQUINAS_INICIAIS, PRODUTOS_INICIAIS } from '../initialData';
 
 const CACHE_MAQUINAS_KEY = 'cimed_maquinas_realtime_cache_v1';
 const CACHE_HISTORICO_KEY = 'cimed_historico_realtime_cache_v1';
+const CACHE_PRODUTOS_KEY = 'cimed_produtos_realtime_cache_v1';
 const MAQUINAS_COLLECTION = 'maquinas';
 const HISTORICO_COLLECTION = 'historico';
+const PRODUTOS_COLLECTION = 'produtos';
 
 // Remove valores undefined para compatibilidade com o Firestore
 function sanitizarParaFirestore(obj: Record<string, any>): Record<string, any> {
@@ -288,5 +290,114 @@ export async function restaurarTodasMaquinasFirestore(): Promise<void> {
     }
   } catch (err) {
     console.warn('Erro ao restaurar máquinas no Firestore:', err);
+  }
+}
+
+/**
+ * Obter produtos do cache local imediato
+ */
+export function obterProdutosLocais(): Produto[] {
+  try {
+    const raw = localStorage.getItem(CACHE_PRODUTOS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const map = new Map<string, Produto>();
+        PRODUTOS_INICIAIS.forEach((p) => map.set(p.id, p));
+        parsed.forEach((p: Produto) => {
+          if (p && p.id && p.nome) {
+            map.set(p.id, p);
+          }
+        });
+        return Array.from(map.values());
+      }
+    }
+  } catch (e) {
+    console.warn('Erro ao ler produtos do cache local:', e);
+  }
+  return PRODUTOS_INICIAIS;
+}
+
+export function salvarProdutosLocais(produtos: Produto[]) {
+  try {
+    localStorage.setItem(CACHE_PRODUTOS_KEY, JSON.stringify(produtos));
+  } catch (e) {
+    console.warn('Erro ao salvar produtos no cache local:', e);
+  }
+}
+
+/**
+ * Salva ou atualiza um produto no Firestore
+ */
+export async function salvarProdutoFirestore(produto: Produto): Promise<void> {
+  try {
+    const docRef = doc(db, PRODUTOS_COLLECTION, produto.id);
+    await setDoc(docRef, sanitizarParaFirestore(produto));
+  } catch (err) {
+    console.warn(`Falha ao gravar produto ${produto.id} no Firestore:`, err);
+  }
+}
+
+/**
+ * Exclui um produto no Firestore
+ */
+export async function excluirProdutoFirestore(id: string): Promise<void> {
+  try {
+    const docRef = doc(db, PRODUTOS_COLLECTION, id);
+    await deleteDoc(docRef);
+  } catch (err) {
+    console.warn(`Falha ao excluir produto ${id} no Firestore:`, err);
+  }
+}
+
+/**
+ * Escuta produtos em tempo real no Firestore, mesclando com o catálogo de fábrica
+ */
+export function ouvirProdutosEmTempoReal(
+  onUpdate: (produtos: Produto[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  try {
+    const colRef = collection(db, PRODUTOS_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const listaFirestore: Produto[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            listaFirestore.push({
+              id: docSnap.id,
+              codigo: d.codigo || `P${docSnap.id.slice(-6)}`,
+              nome: (d.nome || '').toUpperCase(),
+              setor: d.setor || 'semissolidos',
+              linha: d.linha || 'NORDEN I',
+              tempoEnvaseMinutos: Number(d.tempoEnvaseMinutos) || 60,
+              vinculos: Array.isArray(d.vinculos) ? d.vinculos : [],
+              temposPorMaquina: d.temposPorMaquina || {},
+            });
+          });
+
+          const map = new Map<string, Produto>();
+          PRODUTOS_INICIAIS.forEach((p) => map.set(p.id, p));
+          listaFirestore.forEach((p) => map.set(p.id, p));
+
+          const merged = Array.from(map.values());
+          salvarProdutosLocais(merged);
+          onUpdate(merged);
+        } else {
+          onUpdate(obterProdutosLocais());
+        }
+      },
+      (error) => {
+        console.warn('Firestore Produtos onSnapshot erro (usando cache local):', error);
+        onUpdate(obterProdutosLocais());
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('Erro ao conectar listener Firestore para produtos:', err);
+    onUpdate(obterProdutosLocais());
+    return () => {};
   }
 }

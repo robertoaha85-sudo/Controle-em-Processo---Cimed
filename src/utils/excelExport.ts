@@ -30,7 +30,16 @@ export async function exportarHistoricoParaExcel(
   workbook.modified = new Date();
 
   const worksheet = workbook.addWorksheet('Histórico de Lotes', {
-    views: [{ state: 'frozen', xSplit: 0, ySplit: 4, showGridLines: true }],
+    views: [
+      {
+        state: 'frozen',
+        xSplit: 0,
+        ySplit: 4,
+        topLeftCell: 'A5',
+        activeCell: 'A5',
+        showGridLines: true,
+      },
+    ],
     properties: { defaultRowHeight: 22 },
   });
 
@@ -123,7 +132,7 @@ export async function exportarHistoricoParaExcel(
     headerRow: true,
     totalsRow: false,
     style: {
-      theme: null,
+      theme: 'TableStyleLight1',
       showRowStripes: false,
     },
     columns: columns.map((col) => ({
