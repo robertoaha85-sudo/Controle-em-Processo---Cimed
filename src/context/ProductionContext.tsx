@@ -33,6 +33,12 @@ import {
   salvarProdutoFirestore,
   excluirProdutoFirestore,
   ouvirProdutosEmTempoReal,
+  obterEquipesLocais,
+  salvarEquipesLocais,
+  salvarEquipeFirestore,
+  salvarTodasEquipesFirestore,
+  excluirEquipeFirestore,
+  ouvirEquipesEmTempoReal,
 } from '../services/realtimeSyncService';
 
 interface ProductionContextType {
@@ -105,7 +111,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   const [maquinas, setMaquinas] = useState<Maquina[]>(obterMaquinasLocais);
   const [produtos, setProdutos] = useState<Produto[]>(obterProdutosLocais);
   const [historico, setHistorico] = useState<LoteHistorico[]>(obterHistoricoLocal);
-  const [equipes, setEquipes] = useState<MembroEquipe[]>(EQUIPES_INICIAIS);
+  const [equipes, setEquipes] = useState<MembroEquipe[]>(obterEquipesLocais);
   const [lotesBloqueio, setLotesBloqueio] = useState<LoteBloqueio[]>(obterLotesBloqueioLocais);
   const [conectado, setConectado] = useState(true);
   const [ultimaSincronizacao, setUltimaSincronizacao] = useState<Date | null>(new Date());
@@ -154,12 +160,49 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     return () => cancelar();
   }, []);
 
+  // 4. Sincronização em tempo real das Equipes no Firestore (com fallback resiliente)
+  useEffect(() => {
+    const cancelar = ouvirEquipesEmTempoReal((novasEquipes) => {
+      setEquipes(novasEquipes);
+      setUltimaSincronizacao(new Date());
+    });
+    return () => cancelar();
+  }, []);
+
   // Carga inicial e conexão SSE em tempo real com fallback resiliente de polling
   useEffect(() => {
     let eventSource: EventSource | null = null;
     let reconnectTimeout: any = null;
     let pollingInterval: any = null;
     let cancelado = false;
+
+    const mesclarProdutosComServidor = (produtosServidor: Produto[]) => {
+      if (!Array.isArray(produtosServidor)) return;
+      setProdutos((prev) => {
+        const map = new Map<string, Produto>();
+        (prev || []).forEach((p) => map.set(p.id, p));
+        produtosServidor.forEach((p: Produto) => {
+          if (p && p.id) map.set(p.id, p);
+        });
+        const merged = Array.from(map.values());
+        salvarProdutosLocais(merged);
+        return merged;
+      });
+    };
+
+    const mesclarEquipesComServidor = (equipesServidor: MembroEquipe[]) => {
+      if (!Array.isArray(equipesServidor)) return;
+      setEquipes((prev) => {
+        const map = new Map<string, MembroEquipe>();
+        (prev || []).forEach((e) => map.set(e.id, e));
+        equipesServidor.forEach((e: MembroEquipe) => {
+          if (e && e.id) map.set(e.id, e);
+        });
+        const merged = Array.from(map.values());
+        salvarEquipesLocais(merged);
+        return merged;
+      });
+    };
 
     const carregarDadosIniciais = async () => {
       try {
@@ -169,9 +212,9 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
           if (cancelado) return;
           setConectado(true);
           if (data.maquinas) setMaquinas(data.maquinas);
-          if (data.produtos) setProdutos(data.produtos);
           if (data.historico) setHistorico(data.historico);
-          if (data.equipes) setEquipes(data.equipes);
+          if (data.produtos) mesclarProdutosComServidor(data.produtos);
+          if (data.equipes) mesclarEquipesComServidor(data.equipes);
         }
       } catch (err) {
         console.warn('Fallback: usando dados locais:', err);
@@ -185,9 +228,9 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
           setConectado(true);
           const data = await res.json();
           if (data.maquinas) setMaquinas(data.maquinas);
-          if (data.produtos) setProdutos(data.produtos);
           if (data.historico) setHistorico(data.historico);
-          if (data.equipes) setEquipes(data.equipes);
+          if (data.produtos) mesclarProdutosComServidor(data.produtos);
+          if (data.equipes) mesclarEquipesComServidor(data.equipes);
         }
       } catch {
         if (!cancelado) setConectado(false);
@@ -213,17 +256,17 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
             setConectado(true);
             if (data.type === 'sync_all') {
               if (data.payload.maquinas) setMaquinas(data.payload.maquinas);
-              if (data.payload.produtos) setProdutos(data.payload.produtos);
               if (data.payload.historico) setHistorico(data.payload.historico);
-              if (data.payload.equipes) setEquipes(data.payload.equipes);
+              if (data.payload.produtos) mesclarProdutosComServidor(data.payload.produtos);
+              if (data.payload.equipes) mesclarEquipesComServidor(data.payload.equipes);
             } else if (data.type === 'maquinas_updated') {
               setMaquinas(data.payload);
             } else if (data.type === 'produtos_updated') {
-              setProdutos(data.payload);
+              mesclarProdutosComServidor(data.payload);
             } else if (data.type === 'historico_updated') {
               setHistorico(data.payload);
             } else if (data.type === 'equipes_updated') {
-              setEquipes(data.payload);
+              mesclarEquipesComServidor(data.payload);
             } else if (data.type === 'lote_finalizado') {
               if (data.payload.maquinas) setMaquinas(data.payload.maquinas);
               if (data.payload.historico) setHistorico(data.payload.historico);
@@ -918,12 +961,26 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   };
 
   const atualizarEquipes = async (novasEquipes: MembroEquipe[]) => {
+    // 1. Atualização Otimista Imediata e cache local persistente
     setEquipes(novasEquipes);
-    await fetch('/api/equipes', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(novasEquipes),
-    });
+    salvarEquipesLocais(novasEquipes);
+    tocarSomSucesso();
+
+    // 2. Persistência permanente no Firestore em tempo real
+    salvarTodasEquipesFirestore(novasEquipes).catch((err) =>
+      console.warn('Erro ao salvar equipes no Firestore:', err)
+    );
+
+    // 3. Persistência na API local
+    try {
+      await fetch('/api/equipes', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(novasEquipes),
+      });
+    } catch (err) {
+      console.warn('Equipes salvas no Firestore e cache local (API em fallback):', err);
+    }
   };
 
   const restaurarDadosPadrao = async () => {

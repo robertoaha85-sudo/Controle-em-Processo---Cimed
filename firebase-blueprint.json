@@ -19,12 +19,48 @@
         "concluidoEm": { "type": "string" }
       },
       "required": ["produto", "numeroLote", "maquina", "prazo", "status"]
+    },
+    "MembroEquipe": {
+      "title": "MembroEquipe",
+      "description": "Membros das equipes responsáveis dos setores de produção (Semissólidos e Líquidos)",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "setor": { "type": "string", "enum": ["semissolidos", "liquidos"] },
+        "turno": { "type": "string" },
+        "cargo": { "type": "string" },
+        "nome": { "type": "string" },
+        "email": { "type": "string" }
+      },
+      "required": ["id", "setor", "turno", "cargo", "nome"]
+    },
+    "Produto": {
+      "title": "Produto",
+      "description": "Produtos e medicamentos fabricados na planta farmacêutica",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "codigo": { "type": "string" },
+        "nome": { "type": "string" },
+        "setor": { "type": "string", "enum": ["semissolidos", "liquidos"] },
+        "linha": { "type": "string" },
+        "tempoEnvaseMinutos": { "type": "number" }
+      },
+      "required": ["id", "nome", "setor", "linha", "tempoEnvaseMinutos"]
     }
   },
   "firestore": {
     "/lotesBloqueio/{id}": {
       "schema": "LoteBloqueio",
       "description": "Coleção de lotes de bloqueio de alta prioridade"
+    },
+    "/equipes/{id}": {
+      "schema": "MembroEquipe",
+      "description": "Coleção de membros das equipes responsáveis por setor"
+    },
+    "/produtos/{id}": {
+      "schema": "Produto",
+      "description": "Coleção de produtos e tempos de envase"
     }
   }
 }

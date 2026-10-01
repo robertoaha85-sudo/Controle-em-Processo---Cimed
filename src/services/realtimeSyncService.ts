@@ -10,15 +10,17 @@ import {
   limit,
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
-import { Maquina, LoteHistorico, Produto } from '../types';
-import { MAQUINAS_INICIAIS, PRODUTOS_INICIAIS } from '../initialData';
+import { Maquina, LoteHistorico, Produto, MembroEquipe } from '../types';
+import { MAQUINAS_INICIAIS, PRODUTOS_INICIAIS, EQUIPES_INICIAIS } from '../initialData';
 
 const CACHE_MAQUINAS_KEY = 'cimed_maquinas_realtime_cache_v1';
 const CACHE_HISTORICO_KEY = 'cimed_historico_realtime_cache_v1';
 const CACHE_PRODUTOS_KEY = 'cimed_produtos_realtime_cache_v1';
+const CACHE_EQUIPES_KEY = 'cimed_equipes_realtime_cache_v2';
 const MAQUINAS_COLLECTION = 'maquinas';
 const HISTORICO_COLLECTION = 'historico';
 const PRODUTOS_COLLECTION = 'produtos';
+const EQUIPES_COLLECTION = 'equipes';
 
 // Remove valores undefined para compatibilidade com o Firestore
 function sanitizarParaFirestore(obj: Record<string, any>): Record<string, any> {
@@ -401,3 +403,136 @@ export function ouvirProdutosEmTempoReal(
     return () => {};
   }
 }
+
+/**
+ * Obter membros das equipes do cache local imediato
+ */
+export function obterEquipesLocais(): MembroEquipe[] {
+  try {
+    const raw = localStorage.getItem(CACHE_EQUIPES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const map = new Map<string, MembroEquipe>();
+        // 1. Carrega os padrões
+        EQUIPES_INICIAIS.forEach((m) => map.set(m.id, m));
+        // 2. Sobrescreve/adiciona os salvos pelo usuário
+        parsed.forEach((m: MembroEquipe) => {
+          if (m && m.id && m.setor) {
+            map.set(m.id, m);
+          }
+        });
+        return Array.from(map.values());
+      }
+    }
+  } catch (e) {
+    console.warn('Erro ao ler equipes do cache local:', e);
+  }
+  return EQUIPES_INICIAIS;
+}
+
+/**
+ * Salvar equipes no cache local
+ */
+export function salvarEquipesLocais(equipes: MembroEquipe[]) {
+  try {
+    localStorage.setItem(CACHE_EQUIPES_KEY, JSON.stringify(equipes));
+  } catch (e) {
+    console.warn('Erro ao salvar equipes no cache local:', e);
+  }
+}
+
+/**
+ * Salva um membro individual da equipe no Firestore
+ */
+export async function salvarEquipeFirestore(membro: MembroEquipe): Promise<void> {
+  try {
+    const docRef = doc(db, EQUIPES_COLLECTION, membro.id);
+    await setDoc(docRef, sanitizarParaFirestore(membro));
+  } catch (err) {
+    console.warn(`Falha ao gravar membro da equipe ${membro.id} no Firestore:`, err);
+  }
+}
+
+/**
+ * Salva a lista completa de equipes no Firestore (todas as alterações)
+ */
+export async function salvarTodasEquipesFirestore(equipes: MembroEquipe[]): Promise<void> {
+  try {
+    const promises = equipes.map((m) => {
+      const docRef = doc(db, EQUIPES_COLLECTION, m.id);
+      return setDoc(docRef, sanitizarParaFirestore(m));
+    });
+    await Promise.allSettled(promises);
+  } catch (err) {
+    console.warn('Erro ao salvar lote de equipes no Firestore:', err);
+  }
+}
+
+/**
+ * Exclui um membro de equipe no Firestore
+ */
+export async function excluirEquipeFirestore(id: string): Promise<void> {
+  try {
+    const docRef = doc(db, EQUIPES_COLLECTION, id);
+    await deleteDoc(docRef);
+  } catch (err) {
+    console.warn(`Falha ao excluir membro ${id} no Firestore:`, err);
+  }
+}
+
+/**
+ * Escuta equipes em tempo real no Firestore, mesclando com o padrão de fábrica
+ */
+export function ouvirEquipesEmTempoReal(
+  onUpdate: (equipes: MembroEquipe[]) => void,
+  onError?: (err: any) => void
+): () => void {
+  try {
+    const colRef = collection(db, EQUIPES_COLLECTION);
+    return onSnapshot(
+      colRef,
+      (snapshot) => {
+        if (!snapshot.empty) {
+          const listaFirestore: MembroEquipe[] = [];
+          snapshot.forEach((docSnap) => {
+            const d = docSnap.data();
+            listaFirestore.push({
+              id: docSnap.id,
+              setor: d.setor || 'semissolidos',
+              turno: d.turno || '1º turno',
+              cargo: d.cargo || 'Analista',
+              nome: d.nome || '',
+              email: d.email || '',
+            });
+          });
+
+          const map = new Map<string, MembroEquipe>();
+          // 1. Padrões de fábrica
+          EQUIPES_INICIAIS.forEach((m) => map.set(m.id, m));
+          // 2. Documentos persistidos no Firestore (incluindo adições e edições de coordenadores)
+          listaFirestore.forEach((m) => map.set(m.id, m));
+
+          const merged = Array.from(map.values());
+          salvarEquipesLocais(merged);
+          onUpdate(merged);
+        } else {
+          // Se a coleção estiver vazia, sincroniza dados locais / iniciais para o Firestore
+          const atuais = obterEquipesLocais();
+          salvarTodasEquipesFirestore(atuais).catch(() => {});
+          onUpdate(atuais);
+        }
+      },
+      (error) => {
+        console.warn('Firestore Equipes onSnapshot erro (usando cache local):', error);
+        onUpdate(obterEquipesLocais());
+        if (onError) onError(error);
+      }
+    );
+  } catch (err) {
+    console.warn('Erro ao conectar listener Firestore para equipes:', err);
+    onUpdate(obterEquipesLocais());
+    return () => {};
+  }
+}
+

@@ -5,20 +5,7 @@
       "nome": "Norden I",
       "setor": "semissolidos",
       "linhaPadrao": "NORDEN I",
-      "status": "livre",
-      "produtoAtualId": null,
-      "produtoAtualCodigo": null,
-      "produtoAtualNome": null,
-      "dataInicio": null,
-      "horaInicio": null,
-      "numeroLote": null,
-      "previsaoTermino": null,
-      "tempoEnvaseMinutos": null,
-      "teveProblemaMecanico": false,
-      "detalheProblema": null,
-      "isBloqueio": false,
-      "loteBloqueioId": null,
-      "ultimaAtualizacao": "2026-09-25T10:18:57.662Z"
+      "status": "livre"
     },
     {
       "id": "m-semi-norden-2",
@@ -2099,57 +2086,9 @@
         "Epativan": 1198,
         "m-liq-epativan": 1198
       }
-    },
-    {
-      "id": "prod-1790682523640-fm21",
-      "codigo": "P523640",
-      "nome": "TESTE",
-      "setor": "semissolidos",
-      "linha": "Norden I",
-      "tempoEnvaseMinutos": 120,
-      "vinculos": [],
-      "temposPorMaquina": {}
-    },
-    {
-      "id": "prod-1790764020727-dgfq",
-      "codigo": "P020727",
-      "nome": "TESTE 01",
-      "setor": "semissolidos",
-      "linha": "Norden II",
-      "tempoEnvaseMinutos": 375,
-      "vinculos": [],
-      "temposPorMaquina": {}
-    },
-    {
-      "id": "prod-1790764179342-iwtt",
-      "codigo": "P179343",
-      "nome": "TESTE 01",
-      "setor": "semissolidos",
-      "linha": "Norden II",
-      "tempoEnvaseMinutos": 375,
-      "vinculos": [],
-      "temposPorMaquina": {}
     }
   ],
-  "historico": [
-    {
-      "id": "lote-1790331537662-xx9z",
-      "maquinaId": "m-semi-norden-1",
-      "maquinaNome": "Norden I",
-      "setor": "semissolidos",
-      "produtoCodigo": "100003",
-      "produtoNome": "ACICLOVIR 50MG/G CREM BG 10G",
-      "numeroLote": "2618651",
-      "dataInicio": "2026-09-25",
-      "horaInicio": "07:19",
-      "horaTermino": "07:19",
-      "duracaoMinutos": 1020,
-      "teveProblemaMecanico": false,
-      "dataFinalizacao": "2026-09-25",
-      "observacao": "",
-      "isBloqueio": false
-    }
-  ],
+  "historico": [],
   "equipes": [
     {
       "id": "eq-sem-1-1",

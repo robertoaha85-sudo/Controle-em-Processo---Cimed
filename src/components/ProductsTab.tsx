@@ -564,7 +564,14 @@ export const ProductsTab: React.FC = () => {
               </button>
             </div>
 
-            <form onSubmit={handleSubmit} noValidate className="p-4 space-y-3.5">
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSubmit();
+              }}
+              noValidate
+              className="p-4 space-y-3.5"
+            >
               {/* Alerta de Erro de Validação */}
               {erroForm && (
                 <div className="bg-red-950/90 border border-red-500/80 text-red-200 text-xs px-3 py-2 rounded flex items-start gap-2 shadow">
@@ -746,7 +753,8 @@ export const ProductsTab: React.FC = () => {
                 </button>
                 <button
                   id="btn-salvar-produto"
-                  type="submit"
+                  type="button"
+                  onClick={() => handleSubmit()}
                   disabled={salvando}
                   className="bg-[#FFD100] hover:bg-[#ffe043] disabled:opacity-50 text-black font-black uppercase tracking-wider px-5 py-2 rounded text-xs flex items-center gap-1.5 shadow transition-all active:scale-95 cursor-pointer"
                 >
