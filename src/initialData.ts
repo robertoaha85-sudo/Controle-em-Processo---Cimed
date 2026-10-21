@@ -1,4 +1,4 @@
-import { Maquina, Produto, MembroEquipe, Setor } from './types';
+import { Maquina, Produto, MembroEquipe, Setor, ParadaLote } from './types';
 
 export const PRODUTOS_INICIAIS: Produto[] = [
   // ==========================================
@@ -1401,10 +1401,281 @@ export const PRODUTOS_INICIAIS: Produto[] = [
     vinculos: [{ linhaOuMaquina: 'Epativan', tempoEnvaseMinutos: 1198 }],
     temposPorMaquina: { 'Epativan': 1198, 'm-liq-epativan': 1198 },
   },
+
+  // ==========================================
+  // SEMISSÓLIDOS — ENVASE IMA (22 Produtos Carmed - 34h00 / 2.040 minutos)
+  // ==========================================
+  {
+    id: 'p-semi-102454',
+    codigo: '102454',
+    nome: 'CARMED HID LAB BG 10G CEREJA',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-103259',
+    codigo: '103259',
+    nome: 'CARMED HID LAB BG 10G MELANCIA',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-103384',
+    codigo: '103384',
+    nome: 'CARMED ACIDO HIALURONICO GEL BG 10G',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-103958',
+    codigo: '103958',
+    nome: 'CARMED HID LAB BG 10G MACA DO AMOR',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-104021',
+    codigo: '104021',
+    nome: 'CARMED FINI BG 10G BANANA',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-104022',
+    codigo: '104022',
+    nome: 'CARMED HID LAB BG 10G FINI BEIJOS C/ COR',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-104023',
+    codigo: '104023',
+    nome: 'CARMED HID LAB BG 10G FINI DENTADURA',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105048',
+    codigo: '105048',
+    nome: 'CARMED HID LAB BG 10G AMORA CLARO',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105049',
+    codigo: '105049',
+    nome: 'CARMED HID LAB BG 10G AMORA ESCURO',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105050',
+    codigo: '105050',
+    nome: 'CARMED HID LAB BG 10G FINI MINHO',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105511',
+    codigo: '105511',
+    nome: 'CARMED HID LAB BG 10G COCA COLA INCOLOR',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105512',
+    codigo: '105512',
+    nome: 'CARMED HID LAB BG 10G COCA COLA VERMELHO',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105513',
+    codigo: '105513',
+    nome: 'CARMED HID LAB BG 10G COCA COLA MARROM',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105514',
+    codigo: '105514',
+    nome: 'CARMED HID LAB BG 10G SMURFS',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105575',
+    codigo: '105575',
+    nome: 'CARMED STRANGER HID LAB BG10G WAFFLE PRE',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105595',
+    codigo: '105595',
+    nome: 'CARMED STRANGER HID LAB BG10G WAFFLE VER',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-105714',
+    codigo: '105714',
+    nome: 'CARMED HID LAB BG 10G SPRITE INCOLOR',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-252312',
+    codigo: '252312',
+    nome: 'CARMED HID LAB 10G ALGODAO DOCE',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-252313',
+    codigo: '252313',
+    nome: 'CARMED ESF LAB 10G ALGODAO DOCE',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-252351',
+    codigo: '252351',
+    nome: 'CARMED HIDRA LAB FPS BG10G SORVT MORANGO',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-252352',
+    codigo: '252352',
+    nome: 'CARMED HIDRA LAB FPS BG10G SORVETE UVA',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
+  {
+    id: 'p-semi-252353',
+    codigo: '252353',
+    nome: 'CARMED HIDRA LAB FPS BG10G SORV TANGER',
+    setor: 'semissolidos',
+    linha: 'IMA',
+    maquina: 'IMA',
+    tempoEnvaseMinutos: 2040,
+    tempoMedioMinutos: 2040,
+    vinculos: [{ linhaOuMaquina: 'IMA', tempoEnvaseMinutos: 2040 }],
+    temposPorMaquina: { 'IMA': 2040, 'm-semi-ima': 2040 },
+  },
 ];
 
+// Exportação explícita da lista de produtos da máquina IMA
+export const PRODUTOS_IMA: Produto[] = PRODUTOS_INICIAIS.slice(-22);
+
 export const MAQUINAS_INICIAIS: Maquina[] = [
-  // Setor Semissólidos — 4 máquinas
+  // Setor Semissólidos — 5 máquinas (Norden I a IV e IMA)
   {
     id: 'm-semi-norden-1',
     nome: 'Norden I',
@@ -1431,6 +1702,13 @@ export const MAQUINAS_INICIAIS: Maquina[] = [
     nome: 'Norden IV',
     setor: 'semissolidos',
     linhaPadrao: 'NORDEN IV',
+    status: 'livre',
+  },
+  {
+    id: 'm-semi-ima',
+    nome: 'IMA',
+    setor: 'semissolidos',
+    linhaPadrao: 'IMA',
     status: 'livre',
   },
 
@@ -1522,6 +1800,34 @@ export function converterTextoParaMinutos(texto: string): number {
   return total;
 }
 
+// Calcula a soma de minutos de todas as paradas do lote (incluindo parada em andamento até agora)
+export function calcularTotalParadasMinutos(paradas?: ParadaLote[], agora: Date = new Date()): number {
+  if (!paradas || paradas.length === 0) return 0;
+  let totalMs = 0;
+  const agoraMs = agora.getTime();
+
+  for (const p of paradas) {
+    if (!p.inicio) continue;
+    const iniMs = new Date(p.inicio).getTime();
+    if (isNaN(iniMs)) continue;
+
+    let fimMs: number;
+    if (p.fim) {
+      fimMs = new Date(p.fim).getTime();
+      if (isNaN(fimMs)) fimMs = agoraMs;
+    } else {
+      // Parada em andamento: conta até o momento atual
+      fimMs = agoraMs;
+    }
+
+    if (fimMs > iniMs) {
+      totalMs += (fimMs - iniMs);
+    }
+  }
+
+  return Math.round(totalMs / (60 * 1000));
+}
+
 // Calcula previsão de término a partir de horaInicio (HH:mm) e minutos
 export function calcularPrevisaoTermino(horaInicio: string, minutosAdicionar: number): string {
   if (!horaInicio) return '';
@@ -1534,6 +1840,18 @@ export function calcularPrevisaoTermino(horaInicio: string, minutosAdicionar: nu
   const minsFim = totalFim % 60;
 
   return `${String(horasFim).padStart(2, '0')}:${String(minsFim).padStart(2, '0')}`;
+}
+
+// Previsão de término com paradas = horário de início + tempo médio do produto + soma de todas as paradas do lote
+export function calcularPrevisaoComParadas(
+  horaInicio: string,
+  minutosProduto: number,
+  paradas?: ParadaLote[],
+  agora: Date = new Date()
+): string {
+  if (!horaInicio) return '';
+  const minutosParadas = calcularTotalParadasMinutos(paradas, agora);
+  return calcularPrevisaoTermino(horaInicio, minutosProduto + minutosParadas);
 }
 
 // Calcula a duração real em minutos entre o início e o término real do lote
@@ -1580,27 +1898,33 @@ export interface ProgressoLoteResult {
   atrasoMinutos: number;
   decorridoMinutos: number;
   duracaoTotalMinutos: number;
+  tempoParadoMinutos: number;
+  previsaoAjustadaHora?: string;
 }
 
 /**
  * Calcula com precisão absoluta de calendário e relógio o progresso do lote.
- * Suporta lotes que atravessam a meia-noite, lotes em fins de semana e múltiplos dias,
- * garantindo que qualquer lote ultrapassado fique 100% preenchido com status ATRASADO.
+ * Previsão de término = horário de início + tempo médio do produto + soma de todas as paradas do lote.
+ * A barra de progresso, o cálculo de "Atrasado" e o tempo restante usam essa previsão ajustada.
+ * Durante uma parada em andamento, a previsão vai se empurrando junto com o relógio.
  */
 export function calcularProgressoLote(
   maquina: Partial<Maquina>,
   horaAtual: Date = new Date()
 ): ProgressoLoteResult {
+  // Se a máquina estiver livre ou parada sem nenhum lote ativo
   if (
     maquina.status === 'livre' ||
-    maquina.status === 'em_limpeza_total' ||
-    maquina.status === 'em_limpeza_parcial' ||
-    maquina.status === 'aguardando_manipulacao' ||
+    ((maquina.status === 'em_limpeza_total' ||
+      maquina.status === 'pausa' ||
+      maquina.status === 'em_limpeza_parcial' ||
+      maquina.status === 'aguardando_manipulacao') &&
+      !maquina.produtoAtualNome) ||
     !maquina.horaInicio
   ) {
     let texto = 'Máquina parada / livre';
     if (maquina.status === 'em_limpeza_total') texto = 'Em limpeza total';
-    else if (maquina.status === 'em_limpeza_parcial') texto = 'Em limpeza parcial';
+    else if (maquina.status === 'pausa' || maquina.status === 'em_limpeza_parcial') texto = 'Em pausa';
     else if (maquina.status === 'aguardando_manipulacao') texto = 'Aguardando manipulação';
 
     return {
@@ -1610,6 +1934,7 @@ export function calcularProgressoLote(
       atrasoMinutos: 0,
       decorridoMinutos: 0,
       duracaoTotalMinutos: 0,
+      tempoParadoMinutos: 0,
     };
   }
 
@@ -1623,6 +1948,7 @@ export function calcularProgressoLote(
       atrasoMinutos: 0,
       decorridoMinutos: 0,
       duracaoTotalMinutos: 0,
+      tempoParadoMinutos: 0,
     };
   }
   const [hIni, mIni] = horaPartes;
@@ -1662,9 +1988,8 @@ export function calcularProgressoLote(
   }
 
   // Se mesmo assim não houver data explícita e o lote já está em andamento,
-  // mas a hora de início no relógio é maior que a hora atual (ex: começou 14:00 na sexta e agora é 09:00 na segunda),
-  // infere que foi iniciado em dia anterior para não marcar erroneamente como 'futuro'.
-  if (!dataDefinida && (maquina.status === 'em_andamento' || maquina.status === 'problema_mecanico')) {
+  // mas a hora de início no relógio é maior que a hora atual, infere dia anterior
+  if (!dataDefinida) {
     const minIniHoje = hIni * 60 + mIni;
     const minAtualHoje = horaAtual.getHours() * 60 + horaAtual.getMinutes();
     if (minAtualHoje < minIniHoje) {
@@ -1677,27 +2002,37 @@ export function calcularProgressoLote(
 
   const inicioDate = new Date(ano, mes, dia, hIni, mIni, 0, 0);
 
-  // 3. Determinação da duração total prevista (em minutos)
-  let duracaoMin = 0;
+  // 3. Determinação da duração base do produto (em minutos)
+  let duracaoBaseMin = 0;
   if (maquina.tempoEnvaseMinutos && maquina.tempoEnvaseMinutos > 0) {
-    duracaoMin = maquina.tempoEnvaseMinutos;
+    duracaoBaseMin = maquina.tempoEnvaseMinutos;
   } else if (maquina.previsaoTermino) {
     const [hFim, mFim] = maquina.previsaoTermino.split(':').map(Number);
     if (!isNaN(hFim) && !isNaN(mFim)) {
       let diff = (hFim * 60 + mFim) - (hIni * 60 + mIni);
       if (diff <= 0) diff += 24 * 60;
-      duracaoMin = diff;
+      duracaoBaseMin = diff;
     }
   }
 
-  if (duracaoMin <= 0) {
-    duracaoMin = 60; // fallback padrão de 1 hora
+  if (duracaoBaseMin <= 0) {
+    duracaoBaseMin = 60; // fallback padrão
   }
 
-  // Momento exato em que o lote deveria terminar
-  const fimDate = new Date(inicioDate.getTime() + duracaoMin * 60 * 1000);
+  // 4. Soma de todas as paradas do lote (incluindo parada em andamento que empurra a previsão com o relógio)
+  const totalParadoMinutos = calcularTotalParadasMinutos(maquina.paradas, horaAtual);
+
+  // Previsão de término = horário de início + tempo médio do produto + soma de todas as paradas do lote
+  const duracaoAjustadaMinutos = duracaoBaseMin + totalParadoMinutos;
+  const fimAjustadoDate = new Date(inicioDate.getTime() + duracaoAjustadaMinutos * 60 * 1000);
+
+  const previsaoAjustadaHora = calcularPrevisaoTermino(maquina.horaInicio, duracaoAjustadaMinutos);
+
   const decorridoMs = horaAtual.getTime() - inicioDate.getTime();
   const decorridoMin = decorridoMs / (60 * 1000);
+
+  // Tempo efetivo trabalhado (descontando as paradas)
+  const tempoEfetivoMin = Math.max(0, decorridoMin - totalParadoMinutos);
 
   // Caso: Agendado para o futuro
   if (decorridoMin < 0) {
@@ -1711,13 +2046,15 @@ export function calcularProgressoLote(
       estaAtrasado: false,
       atrasoMinutos: 0,
       decorridoMinutos: decorridoMin,
-      duracaoTotalMinutos: duracaoMin,
+      duracaoTotalMinutos: duracaoAjustadaMinutos,
+      tempoParadoMinutos: totalParadoMinutos,
+      previsaoAjustadaHora,
     };
   }
 
-  // Caso: ATRASADO (decorrido maior ou igual à duração prevista)
-  if (decorridoMin >= duracaoMin || horaAtual.getTime() >= fimDate.getTime()) {
-    const atraso = Math.floor(decorridoMin - duracaoMin);
+  // Caso: ATRASADO (decorrido maior ou igual à duração ajustada com as paradas)
+  if (decorridoMin >= duracaoAjustadaMinutos || horaAtual.getTime() >= fimAjustadoDate.getTime()) {
+    const atraso = Math.floor(decorridoMin - duracaoAjustadaMinutos);
     const dias = Math.floor(atraso / 1440);
     const horasRest = Math.floor((atraso % 1440) / 60);
     const minsRest = atraso % 60;
@@ -1737,13 +2074,16 @@ export function calcularProgressoLote(
       estaAtrasado: true,
       atrasoMinutos: atraso,
       decorridoMinutos: decorridoMin,
-      duracaoTotalMinutos: duracaoMin,
+      duracaoTotalMinutos: duracaoAjustadaMinutos,
+      tempoParadoMinutos: totalParadoMinutos,
+      previsaoAjustadaHora,
     };
   }
 
-  // Caso: Em andamento normal dentro do prazo
-  const pct = Math.min(99.9, Math.max(0, (decorridoMin / duracaoMin) * 100));
-  const restante = Math.ceil(duracaoMin - decorridoMin);
+  // Caso: Em andamento normal dentro do prazo ajustado
+  // O progresso efetivo é baseado no tempo trabalhado em relação ao tempo médio do lote
+  const pct = Math.min(99.9, Math.max(0, (tempoEfetivoMin / duracaoBaseMin) * 100));
+  const restante = Math.ceil(duracaoAjustadaMinutos - decorridoMin);
   const diasRest = Math.floor(restante / 1440);
   const horasRest = Math.floor((restante % 1440) / 60);
   const minsRest = restante % 60;
@@ -1757,13 +2097,26 @@ export function calcularProgressoLote(
     textoRest = `${minsRest}min restantes`;
   }
 
+  // Se a máquina estiver com parada ativa no momento
+  if (maquina.status === 'pausa' || maquina.status === 'em_limpeza_parcial') {
+    textoRest = `Pausa • ${textoRest}`;
+  } else if (maquina.status === 'problema_mecanico') {
+    textoRest = `Parada mecânica • ${textoRest}`;
+  } else if (maquina.status === 'em_limpeza_total') {
+    textoRest = `Limpeza total • ${textoRest}`;
+  } else if (maquina.status === 'aguardando_manipulacao') {
+    textoRest = `Aguard. manipulação • ${textoRest}`;
+  }
+
   return {
     porcentagem: Number(pct.toFixed(1)),
     tempoRestanteTexto: textoRest,
     estaAtrasado: false,
     atrasoMinutos: 0,
     decorridoMinutos: decorridoMin,
-    duracaoTotalMinutos: duracaoMin,
+    duracaoTotalMinutos: duracaoAjustadaMinutos,
+    tempoParadoMinutos: totalParadoMinutos,
+    previsaoAjustadaHora,
   };
 }
 
@@ -1821,6 +2174,14 @@ function gerarVariacoesMaquina(termo?: string): string[] {
       variacoes.add('nordens i');
       variacoes.add('m-semi-norden-1');
     }
+  }
+
+  // Equivalências da envasadora IMA
+  if (limpo.includes('ima')) {
+    variacoes.add('ima');
+    variacoes.add('m-semi-ima');
+    variacoes.add('envasadora ima');
+    variacoes.add('linha ima');
   }
 
   return Array.from(variacoes);

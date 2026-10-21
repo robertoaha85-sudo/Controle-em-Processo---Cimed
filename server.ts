@@ -36,12 +36,41 @@ function carregarDados(): StoreData {
       const raw = fs.readFileSync(DATA_FILE, 'utf-8');
       const parsed = JSON.parse(raw);
 
+      // Garante que todas as máquinas canônicas (incluindo IMA) estejam presentes
+      const maquinasList = Array.isArray(parsed.maquinas)
+        ? parsed.maquinas.map((m: any) => ({
+            ...m,
+            status: m.status === 'em_limpeza_parcial' ? 'pausa' : m.status,
+          }))
+        : [...MAQUINAS_INICIAIS];
+      const maqIds = new Set(maquinasList.map((m: any) => m.id));
+      for (const m of MAQUINAS_INICIAIS) {
+        if (!maqIds.has(m.id)) {
+          maquinasList.push(m);
+        }
+      }
+
+      // Garante que todo o catálogo inicial de produtos (incluindo IMA) esteja presente
+      const produtosList = Array.isArray(parsed.produtos) ? [...parsed.produtos] : [...PRODUTOS_INICIAIS];
+      const prodIds = new Set(produtosList.map((p: any) => p.id));
+      for (const p of PRODUTOS_INICIAIS) {
+        if (!prodIds.has(p.id)) {
+          produtosList.push(p);
+        }
+      }
+
+      const equipesList =
+        Array.isArray(parsed.equipes) && parsed.equipes.length > 0
+          ? parsed.equipes
+          : EQUIPES_INICIAIS;
+
       const data: StoreData = {
-        maquinas: parsed.maquinas || MAQUINAS_INICIAIS,
-        produtos: Array.isArray(parsed.produtos) ? parsed.produtos : PRODUTOS_INICIAIS,
+        maquinas: maquinasList,
+        produtos: produtosList,
         historico: parsed.historico || [],
-        equipes: parsed.equipes || EQUIPES_INICIAIS,
+        equipes: equipesList,
       };
+      salvarDados(data);
       return data;
     }
   } catch (err) {
@@ -171,12 +200,28 @@ async function startServer() {
     const horaAtualStr = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
     const dataStr = agora.toISOString().split('T')[0];
 
-    // Cria registro de histórico
+    // Cria registro de histórico com paradas
     const horaIniValida = maquina.horaInicio || horaAtualStr;
     const horaFimValida = horaTermino || horaAtualStr;
     const dataIniValida = maquina.dataInicio || dataStr;
     const duracaoPrevista = maquina.tempoEnvaseMinutos || 0;
     const duracaoReal = calcularDuracaoRealMinutos(horaIniValida, horaFimValida, dataIniValida, dataStr);
+
+    const paradasReq = Array.isArray(req.body.paradas)
+      ? req.body.paradas
+      : (Array.isArray(maquina.paradas) ? maquina.paradas : []);
+    const paradasFinais = paradasReq.map((p: any) => (!p.fim ? { ...p, fim: agora.toISOString() } : p));
+    const tempoParado = req.body.tempoParadoMinutos !== undefined
+      ? Number(req.body.tempoParadoMinutos)
+      : paradasFinais.reduce((acc: number, p: any) => {
+          if (!p.inicio) return acc;
+          const ini = new Date(p.inicio).getTime();
+          const fim = p.fim ? new Date(p.fim).getTime() : agora.getTime();
+          return acc + (fim > ini ? Math.round((fim - ini) / 60000) : 0);
+        }, 0);
+    const tempoEfetivo = req.body.tempoEfetivoMinutos !== undefined
+      ? Number(req.body.tempoEfetivoMinutos)
+      : Math.max(0, duracaoReal - tempoParado);
 
     const novoLote: LoteHistorico = {
       id: `lote-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
@@ -192,7 +237,14 @@ async function startServer() {
       duracaoMinutos: duracaoReal,
       duracaoPrevistaMinutos: duracaoPrevista,
       duracaoRealMinutos: duracaoReal,
-      teveProblemaMecanico: Boolean(maquina.teveProblemaMecanico || maquina.status === 'problema_mecanico'),
+      tempoParadoMinutos: tempoParado,
+      tempoEfetivoMinutos: tempoEfetivo,
+      paradas: paradasFinais,
+      teveProblemaMecanico: Boolean(
+        maquina.teveProblemaMecanico ||
+        maquina.status === 'problema_mecanico' ||
+        paradasFinais.some((p: any) => p.motivo === 'Problema mecânico')
+      ),
       dataFinalizacao: dataStr,
       observacao: observacao || '',
       isBloqueio: Boolean(maquina.isBloqueio),
@@ -216,6 +268,7 @@ async function startServer() {
       detalheProblema: null,
       isBloqueio: false,
       loteBloqueioId: null,
+      paradas: [],
       ultimaAtualizacao: agora.toISOString(),
     };
 

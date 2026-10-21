@@ -45,21 +45,41 @@ export const TeamSection: React.FC<TeamSectionProps> = ({ setor, equipes, onEdit
     currentTurnoName = '3º turno';
   }
 
+  // Localiza coordenador do setor com nome preenchido
+  const coordenador = equipeDoSetor.find(
+    (m) =>
+      m.nome &&
+      m.nome.trim() !== '' &&
+      m.nome !== '(a definir)' &&
+      (m.cargo.toLowerCase().includes('coord') || m.cargo.toLowerCase().includes('geral'))
+  );
+
   // Get members of the current shift plus general/coordinators if applicable
   const currentTurnoMembers = turnosMap.get(currentTurnoName) || [];
   const geralMembers = turnosMap.get('Geral') || [];
-  const summarizedMembers = [...currentTurnoMembers, ...geralMembers].filter(m => m.nome && m.nome !== '(a definir)');
-  
+  const summarizedMembers = [...currentTurnoMembers, ...geralMembers].filter(
+    (m) => m.nome && m.nome !== '(a definir)'
+  );
+
   // Format summary text
   let summaryText = 'Equipe não definida';
+  const partes: string[] = [];
+
+  if (coordenador) {
+    partes.push(`Coord: ${coordenador.nome.split(' ')[0]}`);
+  }
+
   if (summarizedMembers.length > 0) {
-    // Pegar apenas o primeiro nome para não ficar muito longo
-    const nomes = summarizedMembers.map(m => m.nome.split(' ')[0]);
-    if (nomes.length > 3) {
-      summaryText = `${currentTurnoName}: ${nomes.slice(0, 3).join(', ')} e +${nomes.length - 3}`;
-    } else {
-      summaryText = `${currentTurnoName}: ${nomes.join(', ')}`;
+    const outrosNomes = summarizedMembers
+      .filter((m) => m.id !== coordenador?.id)
+      .map((m) => m.nome.split(' ')[0]);
+    if (outrosNomes.length > 0) {
+      partes.push(`${currentTurnoName}: ${outrosNomes.slice(0, 2).join(', ')}`);
     }
+  }
+
+  if (partes.length > 0) {
+    summaryText = partes.join(' • ');
   } else {
     summaryText = `${currentTurnoName}: (a definir)`;
   }

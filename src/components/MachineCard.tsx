@@ -8,12 +8,17 @@ import {
   RotateCcw,
   Edit3,
   Sparkles,
-  Droplets,
   Hourglass,
   ShieldAlert,
+  Pause,
+  Plus,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
-import { Maquina, StatusMaquina } from '../types';
+import { Maquina, StatusMaquina, ParadaLote } from '../types';
 import { useProduction } from '../context/ProductionContext';
+import { formatarMinutosParaTexto } from '../initialData';
+import { ParadaModal } from './ParadaModal';
 
 interface MachineCardProps {
   maquina: Maquina;
@@ -35,6 +40,9 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
   const [editandoHora, setEditandoHora] = useState(false);
   const [novaHora, setNovaHora] = useState(maquina.horaInicio || '07:00');
   const [confirmandoFinalizar, setConfirmandoFinalizar] = useState(false);
+  const [modalParadaAberta, setModalParadaAberta] = useState(false);
+  const [paradaSelecionada, setParadaSelecionada] = useState<ParadaLote | null>(null);
+  const [expandirParadas, setExpandirParadas] = useState(false);
 
   const statusEfetivo: StatusMaquina = obterStatusEfetivo(maquina);
   const progresso = obterProgresso(maquina);
@@ -77,9 +85,16 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
       cardBg: 'bg-[#161d2b]',
       progressBg: 'bg-blue-500',
     },
+    pausa: {
+      seloBg: 'bg-purple-500/20 text-purple-300 border border-purple-500/50',
+      label: 'PAUSA',
+      cardBorder: 'border border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.2)]',
+      cardBg: 'bg-[#1e162b]',
+      progressBg: 'bg-purple-500',
+    },
     em_limpeza_parcial: {
       seloBg: 'bg-purple-500/20 text-purple-300 border border-purple-500/50',
-      label: 'EM LIMPEZA PARCIAL',
+      label: 'PAUSA',
       cardBorder: 'border border-purple-500/50 shadow-[0_0_12px_rgba(168,85,247,0.2)]',
       cardBg: 'bg-[#1e162b]',
       progressBg: 'bg-purple-500',
@@ -103,9 +118,11 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
   const temProblema = statusEfetivo === 'problema_mecanico';
   const estaAtrasado = statusEfetivo === 'atrasado' || (progresso.estaAtrasado && !temProblema);
   const emLimpezaTotal = statusEfetivo === 'em_limpeza_total';
-  const emLimpezaParcial = statusEfetivo === 'em_limpeza_parcial';
+  const emPausa = statusEfetivo === 'pausa' || statusEfetivo === 'em_limpeza_parcial';
   const aguardandoManipulacao = statusEfetivo === 'aguardando_manipulacao';
-  const temLoteAtivo = Boolean(maquina.produtoAtualNome && (statusEfetivo === 'em_andamento' || estaAtrasado || temProblema));
+  const temLoteAtivo = Boolean(maquina.produtoAtualNome);
+  const paradas = maquina.paradas || [];
+  const tempoTotalParadoMinutos = progresso.tempoParadoMinutos || 0;
 
   // Identifica se esta máquina está processando um Lote de Bloqueio (prioridade máxima)
   const isBloqueioAtivo = Boolean(
@@ -223,18 +240,18 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
           </div>
         )}
 
-        {emLimpezaParcial && (
+        {emPausa && (
           <div className="bg-purple-950/40 border border-purple-500/30 rounded p-2.5 my-1.5 space-y-1">
             <div className="flex items-center gap-1.5 text-purple-300 text-xs font-bold uppercase tracking-wider">
-              <Droplets className="w-3.5 h-3.5 text-purple-400" />
-              <span>Higienização Parcial</span>
+              <Pause className="w-3.5 h-3.5 text-purple-400" />
+              <span>Máquina Pausada</span>
             </div>
             <p className="text-[10px] text-purple-200/60 leading-tight">
-              Limpeza intermediária e sanitização rápida dos dosadores para troca de lote.
+              Pausa operacional (falta de colaborador ou pausa programada de linha).
             </p>
             {maquina.produtoAtualNome && (
               <p className="text-[10px] text-white/50 truncate pt-0.5 font-mono">
-                Último produto: {maquina.produtoAtualNome}
+                Lote em pausa: {maquina.produtoAtualNome}
               </p>
             )}
           </div>
@@ -258,7 +275,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
         )}
 
         {/* Informações do Lote em Andamento ou Alerta */}
-        {(statusEfetivo === 'em_andamento' || estaAtrasado || (temProblema && maquina.produtoAtualNome)) && (
+        {temLoteAtivo && (
           <div>
             <div className="flex items-center justify-between mb-0.5 flex-wrap gap-1">
               <div className="text-[10px] text-white/40 uppercase font-semibold tracking-wider">
@@ -281,7 +298,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
               {maquina.produtoAtualNome || '—'}
             </div>
 
-            {/* Informações de Horário de Início e Previsão */}
+            {/* Informações de Horário de Início e Previsão Ajustada */}
             <div className="flex items-center justify-between text-[11px] text-white/50 mb-1.5 font-mono">
               <div className="flex items-center gap-1">
                 <span>Início:</span>
@@ -320,7 +337,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
               <div className="flex items-center gap-1">
                 <span>Previsão:</span>
                 <span className={estaAtrasado ? 'text-orange-400 font-bold' : 'text-white/80 font-bold'}>
-                  {maquina.previsaoTermino || '--:--'}
+                  {progresso.previsaoAjustadaHora || maquina.previsaoTermino || '--:--'}
                 </span>
               </div>
             </div>
@@ -335,16 +352,128 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
                     ? 'bg-orange-500 w-full'
                     : temProblema
                     ? 'bg-red-600'
+                    : emPausa
+                    ? 'bg-purple-500'
                     : 'bg-[#FFD100]'
                 }`}
                 style={{ width: estaAtrasado && !isBloqueioAtivo ? '100%' : `${Math.min(100, progresso.porcentagem)}%` }}
               />
             </div>
 
-            <div className="flex justify-between items-center text-[10px] font-mono text-white/50 mb-1">
+            <div className="flex justify-between items-center text-[10px] font-mono text-white/50 mb-1.5">
               <span>{progresso.tempoRestanteTexto}</span>
               <span className="font-bold text-white/80">{progresso.porcentagem}%</span>
             </div>
+
+            {/* Linha pequena com Tempo Total Parado e Botão Registrar Parada */}
+            <div className="pt-1.5 border-t border-white/5 flex items-center justify-between gap-1 text-[11px] font-mono">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[10px] text-white/40 uppercase font-bold shrink-0">Parado:</span>
+                <span className={`font-bold shrink-0 ${tempoTotalParadoMinutos > 0 ? 'text-purple-300' : 'text-white/50'}`}>
+                  {tempoTotalParadoMinutos > 0 ? formatarMinutosParaTexto(tempoTotalParadoMinutos) : '0 min'}
+                </span>
+                {paradas.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandirParadas(!expandirParadas)}
+                    className="text-[10px] text-purple-400 hover:text-purple-300 underline flex items-center gap-0.5 cursor-pointer truncate"
+                    title="Expandir lista detalhada de paradas do lote"
+                  >
+                    <span>({paradas.length})</span>
+                    {expandirParadas ? <ChevronUp className="w-3 h-3 shrink-0" /> : <ChevronDown className="w-3 h-3 shrink-0" />}
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                id={`btn-registrar-parada-${maquina.id}`}
+                onClick={() => {
+                  setParadaSelecionada(null);
+                  setModalParadaAberta(true);
+                }}
+                className="bg-purple-500/15 hover:bg-purple-500/30 text-purple-300 border border-purple-500/40 hover:border-purple-400 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-sm shrink-0"
+                title="Lançar parada retroativa ou em andamento neste lote"
+              >
+                <Plus className="w-3 h-3 text-purple-300" />
+                <span>Registrar parada</span>
+              </button>
+            </div>
+
+            {/* Lista expandida de paradas com horários, motivos e edição */}
+            {expandirParadas && paradas.length > 0 && (
+              <div className="mt-2 bg-black/60 border border-white/10 rounded p-2 space-y-1.5 text-[10px] font-mono animate-in fade-in duration-150">
+                <div className="flex items-center justify-between text-white/40 uppercase text-[9px] font-bold border-b border-white/10 pb-1">
+                  <span>Paradas Registradas ({paradas.length})</span>
+                  <button
+                    type="button"
+                    onClick={() => setExpandirParadas(false)}
+                    className="hover:text-white cursor-pointer"
+                  >
+                    Fechar
+                  </button>
+                </div>
+                <div className="space-y-1 max-h-36 overflow-y-auto pr-0.5">
+                  {paradas.map((p, idx) => {
+                    const duracaoMin = (() => {
+                      if (!p.inicio) return 0;
+                      const ini = new Date(p.inicio).getTime();
+                      const fim = p.fim ? new Date(p.fim).getTime() : new Date().getTime();
+                      return Math.max(0, Math.round((fim - ini) / 60000));
+                    })();
+
+                    const horaIni = new Date(p.inicio).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+                    const horaFim = p.fim
+                      ? new Date(p.fim).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                      : 'Em andamento';
+
+                    return (
+                      <div
+                        key={p.id || idx}
+                        className="bg-white/5 hover:bg-white/10 rounded p-1.5 flex items-center justify-between gap-1 border border-white/5 transition-colors"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-purple-300 uppercase text-[9px]">
+                              {p.motivo}
+                            </span>
+                            {!p.fim && (
+                              <span className="bg-purple-600/40 text-purple-200 border border-purple-500/50 px-1 rounded text-[8px] uppercase font-bold animate-pulse">
+                                Ativa
+                              </span>
+                            )}
+                            <span className="text-white/60">
+                              {horaIni} → {horaFim}
+                            </span>
+                            <span className="text-[#FFD100] font-bold">
+                              ({formatarMinutosParaTexto(duracaoMin)})
+                            </span>
+                          </div>
+                          {p.observacao && (
+                            <p className="text-[9px] text-white/40 truncate font-sans mt-0.5">
+                              {p.observacao}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setParadaSelecionada(p);
+                              setModalParadaAberta(true);
+                            }}
+                            className="text-white/40 hover:text-white p-0.5 cursor-pointer"
+                            title="Editar horário ou motivo da parada"
+                          >
+                            <Edit3 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -465,7 +594,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
                 id={`btn-limpeza-total-${maquina.id}`}
                 onClick={() => {
                   if (statusEfetivo === 'em_limpeza_total') {
-                    alterarStatusMaquina(maquina.id, 'livre');
+                    alterarStatusMaquina(maquina.id, maquina.produtoAtualNome ? 'em_andamento' : 'livre');
                   } else {
                     alterarStatusMaquina(maquina.id, 'em_limpeza_total');
                   }
@@ -481,25 +610,25 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
                 <span className="truncate">Limpeza Total</span>
               </button>
 
-              {/* 5. Em limpeza parcial (cor roxa/lilás) */}
+              {/* 5. Pausa (cor roxa/lilás - mesma posição e mesma cor do botão antigo) */}
               <button
-                id={`btn-limpeza-parcial-${maquina.id}`}
+                id={`btn-pausa-${maquina.id}`}
                 onClick={() => {
-                  if (statusEfetivo === 'em_limpeza_parcial') {
-                    alterarStatusMaquina(maquina.id, 'livre');
+                  if (emPausa) {
+                    alterarStatusMaquina(maquina.id, maquina.produtoAtualNome ? 'em_andamento' : 'livre');
                   } else {
-                    alterarStatusMaquina(maquina.id, 'em_limpeza_parcial');
+                    alterarStatusMaquina(maquina.id, 'pausa');
                   }
                 }}
                 className={`text-[9px] font-bold py-1 px-1 rounded uppercase tracking-wider transition-all flex items-center justify-center gap-1 cursor-pointer ${
-                  statusEfetivo === 'em_limpeza_parcial'
+                  emPausa
                     ? 'bg-purple-600 text-white font-black border border-purple-400 shadow-[0_0_8px_rgba(168,85,247,0.4)]'
                     : 'bg-purple-500/10 border border-purple-500/30 text-purple-300 hover:bg-purple-500/20 hover:border-purple-500/60'
                 }`}
-                title="Colocar em Limpeza Parcial (Roxa/Lilás)"
+                title="Colocar em Pausa (Roxa/Lilás)"
               >
-                <Droplets className="w-2.5 h-2.5" />
-                <span className="truncate">Limpeza Parcial</span>
+                <Pause className="w-2.5 h-2.5" />
+                <span className="truncate">Pausa</span>
               </button>
 
               {/* 6. Aguardando manipulação (cor âmbar) */}
@@ -507,7 +636,7 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
                 id={`btn-aguardando-manipulacao-${maquina.id}`}
                 onClick={() => {
                   if (statusEfetivo === 'aguardando_manipulacao') {
-                    alterarStatusMaquina(maquina.id, 'livre');
+                    alterarStatusMaquina(maquina.id, maquina.produtoAtualNome ? 'em_andamento' : 'livre');
                   } else {
                     alterarStatusMaquina(maquina.id, 'aguardando_manipulacao');
                   }
@@ -526,6 +655,19 @@ export const MachineCard: React.FC<MachineCardProps> = ({ maquina, aoIniciarLote
           </>
         )}
       </div>
+
+      {/* Modal para Registro ou Edição de Paradas */}
+      {modalParadaAberta && (
+        <ParadaModal
+          isOpen={modalParadaAberta}
+          maquina={maquina}
+          paradaParaEditar={paradaSelecionada}
+          aoFechar={() => {
+            setModalParadaAberta(false);
+            setParadaSelecionada(null);
+          }}
+        />
+      )}
     </div>
   );
 };

@@ -7,7 +7,7 @@ import { StartBatchModal } from './StartBatchModal';
 import { TeamSection } from './TeamSection';
 import { TeamEditModal } from './TeamEditModal';
 
-const ORDEM_SEMISSOLIDOS = ['norden i', 'norden ii', 'norden iii', 'norden iv'];
+const ORDEM_SEMISSOLIDOS = ['norden i', 'norden ii', 'norden iii', 'norden iv', 'ima'];
 const ORDEM_LIQUIDOS = ['cam', 'gotas', 'xarope', 'externo', 'epativan'];
 
 export const DashboardTab: React.FC = () => {
@@ -48,14 +48,14 @@ export const DashboardTab: React.FC = () => {
             </h2>
           </div>
           <span className="text-[11px] font-mono text-white/40 uppercase tracking-wider hidden sm:inline pr-2">
-            Norden I a IV
+            Norden I a IV • IMA
           </span>
         </div>
 
         <TeamSection setor="semissolidos" equipes={equipes} onEditClick={setEditSetorEquipe} />
 
-        {/* Grid das 4 máquinas (2–4 colunas no desktop, 1 coluna no mobile) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+        {/* Grid das 5 máquinas de Semissólidos (layout responsivo: 1 col mobile, 2 col tablet, 3-5 cols desktop) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 w-full">
           {maquinasSemissolidos.map((maquina) => (
             <MachineCard
               key={maquina.id}
@@ -82,8 +82,8 @@ export const DashboardTab: React.FC = () => {
 
         <TeamSection setor="liquidos" equipes={equipes} onEditClick={setEditSetorEquipe} />
 
-        {/* Grid das 5 máquinas (2–3 colunas no desktop, 1 coluna no mobile) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+        {/* Grid das 5 máquinas de Líquidos (layout responsivo idêntico: 1 col mobile, 2 col tablet, 3-5 cols desktop) */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4 w-full">
           {maquinasLiquidos.map((maquina) => (
             <MachineCard
               key={maquina.id}
@@ -100,7 +100,7 @@ export const DashboardTab: React.FC = () => {
         <div className="space-y-1">
           <span className="font-bold uppercase tracking-wider text-white/90">Instruções de Operação • Painel Técnico:</span>
           <p className="leading-relaxed">
-            Selecione o status de cada máquina diretamente nos botões do card (Iniciar lote, Problema mecânico, Finalizar lote, Limpeza total, Limpeza parcial ou Aguardando manipulação). O cálculo de previsão e progresso é atualizado em tempo real.
+            Selecione o status de cada máquina diretamente nos botões do card (Iniciar lote, Problema mecânico, Finalizar lote, Limpeza total, Pausa ou Aguardando manipulação). O cálculo de previsão e progresso é atualizado em tempo real com compensação de paradas.
           </p>
         </div>
       </div>

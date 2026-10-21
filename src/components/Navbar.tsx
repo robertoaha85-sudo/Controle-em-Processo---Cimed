@@ -190,11 +190,11 @@ export const Navbar: React.FC<NavbarProps> = ({ abaAtiva, setAbaAtiva }) => {
               </div>
             )}
 
-            {/* Limpeza Parcial (Roxa/Lilás) */}
-            {resumo.emLimpezaParcial > 0 && (
+            {/* Pausa (Roxa/Lilás - Mantém exatamente a mesma cor do status anterior) */}
+            {((resumo.pausa > 0) || ((resumo.emLimpezaParcial || 0) > 0)) && (
               <div className="bg-purple-500/20 border border-purple-500/60 text-purple-300 px-2.5 py-1 rounded flex items-center gap-1.5 font-bold uppercase text-[11px] tracking-wider">
                 <span className="w-2 h-2 rounded-full bg-purple-500"></span>
-                <span>{resumo.emLimpezaParcial} Limpeza Parcial</span>
+                <span>{resumo.pausa || resumo.emLimpezaParcial} Pausa</span>
               </div>
             )}
 

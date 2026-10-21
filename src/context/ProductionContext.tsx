@@ -1,7 +1,21 @@
 import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from 'react';
-import { Maquina, Produto, LoteHistorico, StatusMaquina, ResumoStatus, Setor, MembroEquipe, LoteBloqueio, StatusBloqueio } from '../types';
+import {
+  Maquina,
+  Produto,
+  LoteHistorico,
+  StatusMaquina,
+  ResumoStatus,
+  Setor,
+  MembroEquipe,
+  LoteBloqueio,
+  StatusBloqueio,
+  ParadaLote,
+  MotivoParada,
+} from '../types';
 import {
   calcularPrevisaoTermino,
+  calcularPrevisaoComParadas,
+  calcularTotalParadasMinutos,
   calcularDuracaoRealMinutos,
   calcularProgressoLote,
   obterTempoProdutoParaMaquina,
@@ -59,6 +73,8 @@ interface ProductionContextType {
     tempoRestanteTexto: string;
     estaAtrasado: boolean;
     atrasoMinutos: number;
+    tempoParadoMinutos?: number;
+    previsaoAjustadaHora?: string;
   };
   verificarLoteBloqueio: (
     produtoNomeOuCodigo: string,
@@ -79,11 +95,14 @@ interface ProductionContextType {
   resolverProblemaMecanico: (maquinaId: string) => Promise<void>;
   alterarStatusMaquina: (
     maquinaId: string,
-    novoStatus: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'em_limpeza_parcial' | 'aguardando_manipulacao',
+    novoStatus: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'pausa' | 'em_limpeza_parcial' | 'aguardando_manipulacao',
     detalhe?: string
   ) => Promise<void>;
   atualizarHoraInicio: (maquinaId: string, novaHora: string) => Promise<void>;
   finalizarLote: (maquinaId: string, observacao?: string) => Promise<void>;
+  adicionarParada: (maquinaId: string, parada: Omit<ParadaLote, 'id'>) => Promise<void>;
+  editarParada: (maquinaId: string, paradaId: string, dados: Partial<ParadaLote>) => Promise<void>;
+  removerParada: (maquinaId: string, paradaId: string) => Promise<void>;
   adicionarProduto: (novo: Omit<Produto, 'id'>) => Promise<Produto>;
   editarProduto: (id: string, dados: Partial<Produto>) => Promise<void>;
   excluirProduto: (id: string) => Promise<void>;
@@ -191,12 +210,24 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     };
 
     const mesclarEquipesComServidor = (equipesServidor: MembroEquipe[]) => {
-      if (!Array.isArray(equipesServidor)) return;
+      if (!Array.isArray(equipesServidor) || equipesServidor.length === 0) return;
       setEquipes((prev) => {
         const map = new Map<string, MembroEquipe>();
         (prev || []).forEach((e) => map.set(e.id, e));
         equipesServidor.forEach((e: MembroEquipe) => {
-          if (e && e.id) map.set(e.id, e);
+          if (!e || !e.id) return;
+          const existente = map.get(e.id);
+          // Não regride nome válido preenchido pelo usuário para "(a definir)"
+          if (
+            existente &&
+            existente.nome &&
+            existente.nome.trim() !== '' &&
+            existente.nome !== '(a definir)' &&
+            (e.nome === '(a definir)' || !e.nome)
+          ) {
+            return;
+          }
+          map.set(e.id, e);
         });
         const merged = Array.from(map.values());
         salvarEquipesLocais(merged);
@@ -363,8 +394,8 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     if (maquina.status === 'em_limpeza_total') {
       return 'em_limpeza_total';
     }
-    if (maquina.status === 'em_limpeza_parcial') {
-      return 'em_limpeza_parcial';
+    if (maquina.status === 'pausa' || maquina.status === 'em_limpeza_parcial') {
+      return 'pausa';
     }
     if (maquina.status === 'aguardando_manipulacao') {
       return 'aguardando_manipulacao';
@@ -373,7 +404,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       return 'livre';
     }
 
-    // Se estiver em andamento, verifica se já passou do horário previsto
+    // Se estiver em andamento, verifica se já passou do horário previsto ajustado com paradas
     if (maquina.status === 'em_andamento') {
       const prog = calcularProgressoLote(maquina, horaAtual);
       if (prog.estaAtrasado) {
@@ -396,7 +427,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     let atrasadas = 0;
     let livres = 0;
     let emLimpezaTotal = 0;
-    let emLimpezaParcial = 0;
+    let pausa = 0;
     let aguardandoManipulacao = 0;
 
     maquinas.forEach((m) => {
@@ -405,7 +436,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       else if (st === 'atrasado') atrasadas++;
       else if (st === 'em_andamento') emAndamento++;
       else if (st === 'em_limpeza_total') emLimpezaTotal++;
-      else if (st === 'em_limpeza_parcial') emLimpezaParcial++;
+      else if (st === 'pausa' || st === 'em_limpeza_parcial') pausa++;
       else if (st === 'aguardando_manipulacao') aguardandoManipulacao++;
       else livres++;
     });
@@ -417,7 +448,8 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       atrasadas,
       livres,
       emLimpezaTotal,
-      emLimpezaParcial,
+      pausa,
+      emLimpezaParcial: pausa, // compatibilidade
       aguardandoManipulacao,
     };
   }, [maquinas, obterStatusEfetivo]);
@@ -639,18 +671,75 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
-  // Alterar status da máquina (limpeza total, parcial, aguardando manipulação, etc.)
+  // Alterar status da máquina (limpeza total, pausa, aguardando manipulação, etc.)
+  // Cria paradas automáticas quando entra em status de parada e fecha ao voltar para 'em_andamento'
   const alterarStatusMaquina = async (
     maquinaId: string,
-    novoStatus: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'em_limpeza_parcial' | 'aguardando_manipulacao',
+    novoStatus: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'pausa' | 'em_limpeza_parcial' | 'aguardando_manipulacao',
     detalhe?: string
   ) => {
-    const payload: Partial<Maquina> = {
-      status: novoStatus,
-      detalheProblema: novoStatus === 'problema_mecanico' ? (detalhe || 'Problema mecânico registrado') : null,
+    const maquinaAtual = maquinas.find((m) => m.id === maquinaId);
+    if (!maquinaAtual) return;
+
+    // Converte status legado 'em_limpeza_parcial' para 'pausa'
+    const statusNormalizado: StatusMaquina = novoStatus === 'em_limpeza_parcial' ? 'pausa' : novoStatus;
+    const agora = new Date();
+    const agoraIso = agora.toISOString();
+
+    let novasParadas: ParadaLote[] = maquinaAtual.paradas ? [...maquinaAtual.paradas] : [];
+    const temLote = Boolean(maquinaAtual.produtoAtualNome || maquinaAtual.horaInicio);
+
+    // Mapeamento do status para o motivo de parada automática
+    const motivosMap: Record<string, MotivoParada> = {
+      pausa: 'Pausa',
+      problema_mecanico: 'Problema mecânico',
+      em_limpeza_total: 'Limpeza total',
+      aguardando_manipulacao: 'Aguardando manipulação',
     };
 
-    if (novoStatus === 'problema_mecanico') {
+    let statusFinal = statusNormalizado;
+
+    if (temLote) {
+      if (motivosMap[statusNormalizado]) {
+        const motivoNovo = motivosMap[statusNormalizado];
+        // Fecha qualquer parada anterior que estava aberta
+        novasParadas = novasParadas.map((p) => (!p.fim ? { ...p, fim: agoraIso } : p));
+        // Cria a nova parada automática
+        const novaParada: ParadaLote = {
+          id: `parada-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          inicio: agoraIso,
+          fim: null,
+          motivo: motivoNovo,
+          observacao: detalhe || `Parada automática via botão ${motivoNovo}`,
+          automatica: true,
+        };
+        novasParadas.push(novaParada);
+      } else if (statusNormalizado === 'em_andamento' || statusNormalizado === 'livre') {
+        // Se operador clicou para voltar a 'em_andamento' ou desmarcou o botão
+        novasParadas = novasParadas.map((p) => (!p.fim ? { ...p, fim: agoraIso } : p));
+        statusFinal = 'em_andamento';
+      }
+    }
+
+    // Recalcula previsão ajustada com paradas
+    let novaPrevisao = maquinaAtual.previsaoTermino || null;
+    if (maquinaAtual.horaInicio && maquinaAtual.tempoEnvaseMinutos) {
+      novaPrevisao = calcularPrevisaoComParadas(
+        maquinaAtual.horaInicio,
+        maquinaAtual.tempoEnvaseMinutos,
+        novasParadas,
+        agora
+      );
+    }
+
+    const payload: Partial<Maquina> = {
+      status: statusFinal,
+      detalheProblema: statusFinal === 'problema_mecanico' ? (detalhe || 'Problema mecânico registrado') : null,
+      paradas: novasParadas,
+      previsaoTermino: novaPrevisao,
+    };
+
+    if (statusFinal === 'problema_mecanico') {
       payload.teveProblemaMecanico = true;
       tocarAlarmeProblemaMecanico();
     } else {
@@ -674,12 +763,140 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     }
   };
 
+  // Adicionar parada manual (ou retroativa) no lote em andamento
+  const adicionarParada = async (maquinaId: string, paradaDados: Omit<ParadaLote, 'id'>) => {
+    const maquina = maquinas.find((m) => m.id === maquinaId);
+    if (!maquina) return;
+
+    const novaParada: ParadaLote = {
+      id: `parada-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      ...paradaDados,
+    };
+
+    const novasParadas = [...(maquina.paradas || []), novaParada];
+    const agora = new Date();
+    let novaPrevisao = maquina.previsaoTermino;
+    if (maquina.horaInicio && maquina.tempoEnvaseMinutos) {
+      novaPrevisao = calcularPrevisaoComParadas(
+        maquina.horaInicio,
+        maquina.tempoEnvaseMinutos,
+        novasParadas,
+        agora
+      );
+    }
+
+    const updates: Partial<Maquina> = {
+      paradas: novasParadas,
+      previsaoTermino: novaPrevisao,
+    };
+
+    // Se for uma parada em andamento sem horário de fim, sincroniza o status da máquina
+    if (!novaParada.fim) {
+      if (novaParada.motivo === 'Pausa') updates.status = 'pausa';
+      else if (novaParada.motivo === 'Problema mecânico') {
+        updates.status = 'problema_mecanico';
+        updates.teveProblemaMecanico = true;
+      } else if (novaParada.motivo === 'Limpeza total') updates.status = 'em_limpeza_total';
+      else if (novaParada.motivo === 'Aguardando manipulação') updates.status = 'aguardando_manipulacao';
+    }
+
+    setMaquinas((prev) => prev.map((m) => (m.id === maquinaId ? { ...m, ...updates } : m)));
+    atualizarMaquinaFirestore(maquinaId, updates).catch(console.warn);
+
+    try {
+      await fetch(`/api/maquinas/${maquinaId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+    } catch (err) {
+      console.error('Erro ao salvar parada na máquina:', err);
+    }
+  };
+
+  // Editar parada existente (permite corrigir horários ou motivo)
+  const editarParada = async (maquinaId: string, paradaId: string, dados: Partial<ParadaLote>) => {
+    const maquina = maquinas.find((m) => m.id === maquinaId);
+    if (!maquina || !maquina.paradas) return;
+
+    const novasParadas = maquina.paradas.map((p) => (p.id === paradaId ? { ...p, ...dados } : p));
+    const agora = new Date();
+    let novaPrevisao = maquina.previsaoTermino;
+    if (maquina.horaInicio && maquina.tempoEnvaseMinutos) {
+      novaPrevisao = calcularPrevisaoComParadas(
+        maquina.horaInicio,
+        maquina.tempoEnvaseMinutos,
+        novasParadas,
+        agora
+      );
+    }
+
+    const updates: Partial<Maquina> = {
+      paradas: novasParadas,
+      previsaoTermino: novaPrevisao,
+    };
+
+    setMaquinas((prev) => prev.map((m) => (m.id === maquinaId ? { ...m, ...updates } : m)));
+    atualizarMaquinaFirestore(maquinaId, updates).catch(console.warn);
+
+    try {
+      await fetch(`/api/maquinas/${maquinaId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+    } catch (err) {
+      console.error('Erro ao editar parada:', err);
+    }
+  };
+
+  // Remover parada
+  const removerParada = async (maquinaId: string, paradaId: string) => {
+    const maquina = maquinas.find((m) => m.id === maquinaId);
+    if (!maquina || !maquina.paradas) return;
+
+    const novasParadas = maquina.paradas.filter((p) => p.id !== paradaId);
+    const agora = new Date();
+    let novaPrevisao = maquina.previsaoTermino;
+    if (maquina.horaInicio && maquina.tempoEnvaseMinutos) {
+      novaPrevisao = calcularPrevisaoComParadas(
+        maquina.horaInicio,
+        maquina.tempoEnvaseMinutos,
+        novasParadas,
+        agora
+      );
+    }
+
+    const updates: Partial<Maquina> = {
+      paradas: novasParadas,
+      previsaoTermino: novaPrevisao,
+    };
+
+    setMaquinas((prev) => prev.map((m) => (m.id === maquinaId ? { ...m, ...updates } : m)));
+    atualizarMaquinaFirestore(maquinaId, updates).catch(console.warn);
+
+    try {
+      await fetch(`/api/maquinas/${maquinaId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+    } catch (err) {
+      console.error('Erro ao remover parada:', err);
+    }
+  };
+
   // Atualizar horário de início
   const atualizarHoraInicio = async (maquinaId: string, novaHora: string) => {
     const maquina = maquinas.find((m) => m.id === maquinaId);
     if (!maquina || !maquina.tempoEnvaseMinutos) return;
 
-    const novaPrevisao = calcularPrevisaoTermino(novaHora, maquina.tempoEnvaseMinutos);
+    const novaPrevisao = calcularPrevisaoComParadas(
+      novaHora,
+      maquina.tempoEnvaseMinutos,
+      maquina.paradas,
+      new Date()
+    );
 
     const payload: Partial<Maquina> = {
       horaInicio: novaHora,
@@ -705,7 +922,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     } catch (err) {}
   };
 
-  // Finalizar lote com atualização otimista instantânea
+  // Finalizar lote com atualização otimista instantânea e gravação completa de paradas
   const finalizarLote = async (maquinaId: string, observacao?: string) => {
     const agora = new Date();
     const horaTermino = `${String(agora.getHours()).padStart(2, '0')}:${String(agora.getMinutes()).padStart(2, '0')}`;
@@ -722,6 +939,14 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
     const duracaoPrevista = maquinaAlvo.tempoEnvaseMinutos || 0;
     const duracaoReal = calcularDuracaoRealMinutos(horaInicioEfetiva, horaTermino, dataInicioEfetiva, dataStr);
 
+    // Fecha qualquer parada que estivesse ainda aberta no momento da finalização
+    const paradasFinais: ParadaLote[] = (maquinaAlvo.paradas || []).map((p) =>
+      !p.fim ? { ...p, fim: agora.toISOString() } : p
+    );
+
+    const tempoParadoMinutos = calcularTotalParadasMinutos(paradasFinais, agora);
+    const tempoEfetivoMinutos = Math.max(0, duracaoReal - tempoParadoMinutos);
+
     const loteLocalId = `lote-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
     const historicoOtimista: LoteHistorico = {
       id: loteLocalId,
@@ -737,7 +962,14 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       duracaoMinutos: duracaoReal,
       duracaoPrevistaMinutos: duracaoPrevista,
       duracaoRealMinutos: duracaoReal,
-      teveProblemaMecanico: Boolean(maquinaAlvo.teveProblemaMecanico || maquinaAlvo.status === 'problema_mecanico'),
+      tempoParadoMinutos,
+      tempoEfetivoMinutos,
+      paradas: paradasFinais,
+      teveProblemaMecanico: Boolean(
+        maquinaAlvo.teveProblemaMecanico ||
+        maquinaAlvo.status === 'problema_mecanico' ||
+        paradasFinais.some((p) => p.motivo === 'Problema mecânico')
+      ),
       dataFinalizacao: dataStr,
       observacao: observacao || '',
       isBloqueio: Boolean(maquinaAlvo.isBloqueio),
@@ -785,6 +1017,7 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       detalheProblema: null,
       isBloqueio: false,
       loteBloqueioId: null,
+      paradas: [],
       ultimaAtualizacao: agora.toISOString(),
     };
 
@@ -817,7 +1050,13 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
       const res = await fetch(`/api/maquinas/${maquinaId}/finalizar`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ horaTermino, observacao }),
+        body: JSON.stringify({
+          horaTermino,
+          observacao,
+          paradas: paradasFinais,
+          tempoParadoMinutos,
+          tempoEfetivoMinutos,
+        }),
       });
       if (res.ok) {
         setConectado(true);
@@ -1122,6 +1361,9 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
         alterarStatusMaquina,
         atualizarHoraInicio,
         finalizarLote,
+        adicionarParada,
+        editarParada,
+        removerParada,
         adicionarProduto,
         editarProduto,
         excluirProduto,

@@ -11,7 +11,12 @@ import {
 } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { Maquina, LoteHistorico, Produto, MembroEquipe } from '../types';
-import { MAQUINAS_INICIAIS, PRODUTOS_INICIAIS, EQUIPES_INICIAIS } from '../initialData';
+import {
+  MAQUINAS_INICIAIS,
+  PRODUTOS_INICIAIS,
+  PRODUTOS_IMA,
+  EQUIPES_INICIAIS,
+} from '../initialData';
 
 const CACHE_MAQUINAS_KEY = 'cimed_maquinas_realtime_cache_v1';
 const CACHE_HISTORICO_KEY = 'cimed_historico_realtime_cache_v1';
@@ -58,7 +63,15 @@ export function obterMaquinasLocais(): Maquina[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return ordenarMaquinas(parsed);
+        // Assegura que todas as máquinas padrão (incluindo IMA) estejam presentes
+        const idsExistentes = new Set(parsed.map((m: any) => m.id));
+        const completas = [...parsed];
+        for (const padrao of MAQUINAS_INICIAIS) {
+          if (!idsExistentes.has(padrao.id)) {
+            completas.push(padrao);
+          }
+        }
+        return ordenarMaquinas(completas);
       }
     }
   } catch (e) {
@@ -123,7 +136,7 @@ export function ouvirMaquinasEmTempoReal(
               nome: data.nome || docSnap.id,
               setor: data.setor || 'semissolidos',
               linhaPadrao: data.linhaPadrao || undefined,
-              status: data.status || 'livre',
+              status: data.status === 'em_limpeza_parcial' ? 'pausa' : (data.status || 'livre'),
               produtoAtualId: data.produtoAtualId || null,
               produtoAtualCodigo: data.produtoAtualCodigo || null,
               produtoAtualNome: data.produtoAtualNome || null,
@@ -137,6 +150,7 @@ export function ouvirMaquinasEmTempoReal(
               detalheProblema: data.detalheProblema || null,
               isBloqueio: Boolean(data.isBloqueio),
               loteBloqueioId: data.loteBloqueioId || null,
+              paradas: Array.isArray(data.paradas) ? data.paradas : [],
             });
           });
 
@@ -229,6 +243,9 @@ export function ouvirHistoricoEmTempoReal(
               duracaoMinutos: d.duracaoMinutos || 0,
               duracaoPrevistaMinutos: d.duracaoPrevistaMinutos !== undefined ? d.duracaoPrevistaMinutos : (d.duracaoMinutos || 0),
               duracaoRealMinutos: d.duracaoRealMinutos !== undefined ? d.duracaoRealMinutos : undefined,
+              tempoParadoMinutos: d.tempoParadoMinutos !== undefined ? Number(d.tempoParadoMinutos) : 0,
+              tempoEfetivoMinutos: d.tempoEfetivoMinutos !== undefined ? Number(d.tempoEfetivoMinutos) : undefined,
+              paradas: Array.isArray(d.paradas) ? d.paradas : [],
               teveProblemaMecanico: Boolean(d.teveProblemaMecanico),
               dataFinalizacao: d.dataFinalizacao || '',
               observacao: d.observacao || '',
@@ -353,12 +370,46 @@ export async function excluirProdutoFirestore(id: string): Promise<void> {
 }
 
 /**
+ * Garante que os 22 produtos da máquina IMA estejam cadastrados na coleção 'produtos' do Firebase
+ * com: código, nome, setor (Semissólidos), máquina (IMA), tempoMedioMinutos (2040).
+ */
+export async function sincronizarCatalogoImaNoFirestore(): Promise<void> {
+  try {
+    const promises = PRODUTOS_IMA.map((p) => {
+      const docRef = doc(db, PRODUTOS_COLLECTION, p.id);
+      return setDoc(
+        docRef,
+        sanitizarParaFirestore({
+          id: p.id,
+          codigo: p.codigo,
+          nome: p.nome,
+          setor: 'semissolidos',
+          maquina: 'IMA',
+          linha: 'IMA',
+          tempoMedioMinutos: 2040,
+          tempoEnvaseMinutos: 2040,
+          vinculos: p.vinculos,
+          temposPorMaquina: p.temposPorMaquina,
+        }),
+        { merge: true }
+      );
+    });
+    await Promise.allSettled(promises);
+  } catch (err) {
+    console.warn('Erro ao sincronizar catálogo IMA no Firestore:', err);
+  }
+}
+
+/**
  * Escuta produtos em tempo real no Firestore, mesclando com o catálogo de fábrica
  */
 export function ouvirProdutosEmTempoReal(
   onUpdate: (produtos: Produto[]) => void,
   onError?: (err: any) => void
 ): () => void {
+  // Dispara sincronização do catálogo IMA no Firestore em segundo plano
+  sincronizarCatalogoImaNoFirestore().catch(() => {});
+
   try {
     const colRef = collection(db, PRODUTOS_COLLECTION);
     return onSnapshot(
@@ -373,8 +424,10 @@ export function ouvirProdutosEmTempoReal(
               codigo: d.codigo || `P${docSnap.id.slice(-6)}`,
               nome: (d.nome || '').toUpperCase(),
               setor: d.setor || 'semissolidos',
-              linha: d.linha || 'NORDEN I',
-              tempoEnvaseMinutos: Number(d.tempoEnvaseMinutos) || 60,
+              linha: d.linha || d.maquina || 'NORDEN I',
+              maquina: d.maquina || d.linha || 'NORDEN I',
+              tempoEnvaseMinutos: Number(d.tempoEnvaseMinutos || d.tempoMedioMinutos) || 60,
+              tempoMedioMinutos: Number(d.tempoMedioMinutos || d.tempoEnvaseMinutos) || 60,
               vinculos: Array.isArray(d.vinculos) ? d.vinculos : [],
               temposPorMaquina: d.temposPorMaquina || {},
             });
@@ -413,16 +466,7 @@ export function obterEquipesLocais(): MembroEquipe[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const map = new Map<string, MembroEquipe>();
-        // 1. Carrega os padrões
-        EQUIPES_INICIAIS.forEach((m) => map.set(m.id, m));
-        // 2. Sobrescreve/adiciona os salvos pelo usuário
-        parsed.forEach((m: MembroEquipe) => {
-          if (m && m.id && m.setor) {
-            map.set(m.id, m);
-          }
-        });
-        return Array.from(map.values());
+        return parsed;
       }
     }
   } catch (e) {

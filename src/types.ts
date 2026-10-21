@@ -6,8 +6,25 @@ export type StatusMaquina =
   | 'atrasado'
   | 'livre'
   | 'em_limpeza_total'
-  | 'em_limpeza_parcial'
+  | 'pausa'
+  | 'em_limpeza_parcial' // fallback de compatibilidade com registros antigos
   | 'aguardando_manipulacao';
+
+export type MotivoParada =
+  | 'Pausa'
+  | 'Problema mecânico'
+  | 'Limpeza total'
+  | 'Aguardando manipulação'
+  | 'Outro';
+
+export interface ParadaLote {
+  id: string;
+  inicio: string; // ISO string ou YYYY-MM-DDTHH:mm
+  fim?: string | null; // ISO string ou YYYY-MM-DDTHH:mm; vazio/null se parada em andamento
+  motivo: MotivoParada;
+  observacao?: string;
+  automatica?: boolean;
+}
 
 export interface VinculoMaquinaTempo {
   linhaOuMaquina: string; // Ex: "Xarope", "CAM", "Gotas", "Externo", "Epativan", "Norden I", etc.
@@ -19,8 +36,10 @@ export interface Produto {
   codigo: string; // Código do produto, ex: "100000"
   nome: string;
   setor: Setor;
-  linha: string; // Ex: "Xarope", "CAM", "Gotas", "Externo", "Epativan", "NORDEN I", etc.
+  linha: string; // Ex: "Xarope", "CAM", "Gotas", "Externo", "Epativan", "NORDEN I", "IMA", etc.
+  maquina?: string; // Ex: "IMA"
   tempoEnvaseMinutos: number; // Tempo padrão (em minutos)
+  tempoMedioMinutos?: number; // Equivalente a tempoEnvaseMinutos (ex: 2040)
   vinculos?: VinculoMaquinaTempo[]; // Máquinas às quais o produto está vinculado com seus tempos específicos
   temposPorMaquina?: Record<string, number>; // Mapeamento rápido: { [maquinaNomeOuLinha]: minutos }
 }
@@ -59,7 +78,7 @@ export interface Maquina {
   nome: string; // Ex: "Norden I", "CAM"
   setor: Setor;
   linhaPadrao?: string; // Linha associada para filtrar produtos recomendados
-  status: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'em_limpeza_parcial' | 'aguardando_manipulacao';
+  status: 'em_andamento' | 'problema_mecanico' | 'livre' | 'em_limpeza_total' | 'pausa' | 'em_limpeza_parcial' | 'aguardando_manipulacao';
   produtoAtualId?: string | null;
   produtoAtualCodigo?: string | null;
   produtoAtualNome?: string | null;
@@ -73,6 +92,7 @@ export interface Maquina {
   detalheProblema?: string | null;
   isBloqueio?: boolean;
   loteBloqueioId?: string | null;
+  paradas?: ParadaLote[]; // Lista de paradas do lote em andamento (manuais ou automáticas)
 }
 
 export interface LoteHistorico {
@@ -89,6 +109,9 @@ export interface LoteHistorico {
   duracaoMinutos: number;
   duracaoPrevistaMinutos?: number; // Previsão do tempo de envase (ex: 17h00min)
   duracaoRealMinutos?: number; // Tempo real decorrido entre início e término
+  tempoParadoMinutos?: number; // Tempo total parado durante o lote (minutos)
+  tempoEfetivoMinutos?: number; // Tempo efetivo de produção (duração real menos paradas)
+  paradas?: ParadaLote[]; // Lista completa de paradas do lote
   teveProblemaMecanico: boolean;
   dataFinalizacao: string; // YYYY-MM-DD
   observacao?: string;
@@ -102,6 +125,7 @@ export interface ResumoStatus {
   atrasadas: number;
   livres: number;
   emLimpezaTotal: number;
-  emLimpezaParcial: number;
+  pausa: number;
+  emLimpezaParcial?: number; // compatibilidade
   aguardandoManipulacao: number;
 }

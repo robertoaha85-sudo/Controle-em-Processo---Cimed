@@ -62,6 +62,13 @@
       "setor": "liquidos",
       "linhaPadrao": "Epativan",
       "status": "livre"
+    },
+    {
+      "id": "m-semi-ima",
+      "nome": "IMA",
+      "setor": "semissolidos",
+      "linhaPadrao": "IMA",
+      "status": "livre"
     }
   ],
   "produtos": [
@@ -2085,6 +2092,446 @@
       "temposPorMaquina": {
         "Epativan": 1198,
         "m-liq-epativan": 1198
+      }
+    },
+    {
+      "id": "p-semi-102454",
+      "codigo": "102454",
+      "nome": "CARMED HID LAB BG 10G CEREJA",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-103259",
+      "codigo": "103259",
+      "nome": "CARMED HID LAB BG 10G MELANCIA",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-103384",
+      "codigo": "103384",
+      "nome": "CARMED ACIDO HIALURONICO GEL BG 10G",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-103958",
+      "codigo": "103958",
+      "nome": "CARMED HID LAB BG 10G MACA DO AMOR",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-104021",
+      "codigo": "104021",
+      "nome": "CARMED FINI BG 10G BANANA",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-104022",
+      "codigo": "104022",
+      "nome": "CARMED HID LAB BG 10G FINI BEIJOS C/ COR",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-104023",
+      "codigo": "104023",
+      "nome": "CARMED HID LAB BG 10G FINI DENTADURA",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105048",
+      "codigo": "105048",
+      "nome": "CARMED HID LAB BG 10G AMORA CLARO",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105049",
+      "codigo": "105049",
+      "nome": "CARMED HID LAB BG 10G AMORA ESCURO",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105050",
+      "codigo": "105050",
+      "nome": "CARMED HID LAB BG 10G FINI MINHO",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105511",
+      "codigo": "105511",
+      "nome": "CARMED HID LAB BG 10G COCA COLA INCOLOR",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105512",
+      "codigo": "105512",
+      "nome": "CARMED HID LAB BG 10G COCA COLA VERMELHO",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105513",
+      "codigo": "105513",
+      "nome": "CARMED HID LAB BG 10G COCA COLA MARROM",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105514",
+      "codigo": "105514",
+      "nome": "CARMED HID LAB BG 10G SMURFS",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105575",
+      "codigo": "105575",
+      "nome": "CARMED STRANGER HID LAB BG10G WAFFLE PRE",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105595",
+      "codigo": "105595",
+      "nome": "CARMED STRANGER HID LAB BG10G WAFFLE VER",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-105714",
+      "codigo": "105714",
+      "nome": "CARMED HID LAB BG 10G SPRITE INCOLOR",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-252312",
+      "codigo": "252312",
+      "nome": "CARMED HID LAB 10G ALGODAO DOCE",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-252313",
+      "codigo": "252313",
+      "nome": "CARMED ESF LAB 10G ALGODAO DOCE",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-252351",
+      "codigo": "252351",
+      "nome": "CARMED HIDRA LAB FPS BG10G SORVT MORANGO",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-252352",
+      "codigo": "252352",
+      "nome": "CARMED HIDRA LAB FPS BG10G SORVETE UVA",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
+      }
+    },
+    {
+      "id": "p-semi-252353",
+      "codigo": "252353",
+      "nome": "CARMED HIDRA LAB FPS BG10G SORV TANGER",
+      "setor": "semissolidos",
+      "linha": "IMA",
+      "maquina": "IMA",
+      "tempoEnvaseMinutos": 2040,
+      "tempoMedioMinutos": 2040,
+      "vinculos": [
+        {
+          "linhaOuMaquina": "IMA",
+          "tempoEnvaseMinutos": 2040
+        }
+      ],
+      "temposPorMaquina": {
+        "IMA": 2040,
+        "m-semi-ima": 2040
       }
     }
   ],

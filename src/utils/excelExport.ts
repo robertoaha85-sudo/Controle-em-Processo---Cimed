@@ -5,6 +5,8 @@ import { formatarMinutosParaTexto } from '../initialData';
 export interface TemposLote {
   tempoPrevisto: number;
   tempoReal: number;
+  tempoParado?: number;
+  tempoEfetivo?: number;
 }
 
 // Formata data YYYY-MM-DD para o padrão brasileiro DD/MM/YYYY
@@ -45,7 +47,7 @@ export async function exportarHistoricoParaExcel(
 
   // Linha 1: Banner Superior Estilo Corporativo CIMED (sem mesclagem para não bloquear filtros das colunas)
   worksheet.getRow(1).height = 32;
-  const totalCols = 12;
+  const totalCols = 15;
   for (let c = 1; c <= totalCols; c++) {
     const cell = worksheet.getCell(1, c);
     cell.fill = {
@@ -74,9 +76,9 @@ export async function exportarHistoricoParaExcel(
   const dataHojeBR = agora.toLocaleDateString('pt-BR');
   const horaHojeBR = agora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
   const totalLotes = historico.length;
-  const totalParadas = historico.filter((l) => l.teveProblemaMecanico).length;
+  const totalComParada = historico.filter((l) => (l.paradas && l.paradas.length > 0) || l.teveProblemaMecanico).length;
 
-  metaCell.value = `GERADO EM: ${dataHojeBR} ÀS ${horaHojeBR}   |   TOTAL DE LOTES: ${totalLotes}   |   LOTES COM PARADA MECÂNICA: ${totalParadas}`;
+  metaCell.value = `GERADO EM: ${dataHojeBR} ÀS ${horaHojeBR}   |   TOTAL DE LOTES: ${totalLotes}   |   LOTES COM PARADAS: ${totalComParada}`;
   metaCell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF111111' } };
   metaCell.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
 
@@ -94,19 +96,25 @@ export async function exportarHistoricoParaExcel(
     { key: 'inicio', header: 'Hora Início', minWidth: 14, align: 'center' as const },
     { key: 'termino', header: 'Hora Término', minWidth: 14, align: 'center' as const },
     { key: 'previsao', header: 'Previsão (Estimada)', minWidth: 20, align: 'center' as const },
-    { key: 'tempoReal', header: 'Tempo Real (Efetivo)', minWidth: 20, align: 'center' as const },
-    { key: 'problema', header: 'Parada Mecânica', minWidth: 18, align: 'center' as const },
+    { key: 'tempoReal', header: 'Duração Total', minWidth: 20, align: 'center' as const },
+    { key: 'tempoParado', header: 'Tempo Parado', minWidth: 18, align: 'center' as const },
+    { key: 'tempoEfetivo', header: 'Tempo Efetivo', minWidth: 20, align: 'center' as const },
+    { key: 'qtdParadas', header: 'Qtd. Paradas', minWidth: 15, align: 'center' as const },
+    { key: 'problema', header: 'Problema Mecânico', minWidth: 18, align: 'center' as const },
     { key: 'observacao', header: 'Observações / Motivo', minWidth: 36, align: 'left' as const },
   ];
 
   // Monta as linhas de dados estruturadas para a Tabela do Excel
   const tableRows = historico.map((lote) => {
-    const { tempoPrevisto, tempoReal } = obterTempos(lote);
+    const { tempoPrevisto, tempoReal, tempoParado, tempoEfetivo } = obterTempos(lote);
     const dataFinalizacaoBR = formatarDataBR(lote.dataFinalizacao || lote.dataInicio);
     const setorTexto = lote.setor === 'liquidos' ? 'Líquidos' : 'Semissólidos';
     const teveProblema = Boolean(lote.teveProblemaMecanico);
     const textoPrevisao = formatarMinutosParaTexto(tempoPrevisto);
     const textoTempoReal = formatarMinutosParaTexto(tempoReal);
+    const textoTempoParado = formatarMinutosParaTexto(tempoParado || 0);
+    const textoTempoEfetivo = formatarMinutosParaTexto(tempoEfetivo !== undefined ? tempoEfetivo : tempoReal);
+    const qtdParadas = lote.paradas ? lote.paradas.length : 0;
 
     return [
       dataFinalizacaoBR,
@@ -119,7 +127,10 @@ export async function exportarHistoricoParaExcel(
       lote.horaTermino || '-',
       textoPrevisao,
       textoTempoReal,
-      teveProblema ? 'SIM (PARADA)' : 'NÃO',
+      textoTempoParado,
+      textoTempoEfetivo,
+      qtdParadas,
+      teveProblema ? 'SIM' : 'NÃO',
       lote.observacao || '-',
     ];
   });

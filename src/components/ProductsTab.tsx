@@ -27,6 +27,7 @@ const MAQUINAS_ORDEM = [
   'Norden II',
   'Norden III',
   'Norden IV',
+  'IMA',
   'CAM',
   'Gotas',
   'Xarope',
@@ -34,7 +35,7 @@ const MAQUINAS_ORDEM = [
   'Epativan',
 ] as const;
 
-const MAQUINAS_SEMISSOLIDOS = ['Norden I', 'Norden II', 'Norden III', 'Norden IV'] as const;
+const MAQUINAS_SEMISSOLIDOS = ['Norden I', 'Norden II', 'Norden III', 'Norden IV', 'IMA'] as const;
 const MAQUINAS_LIQUIDOS = ['CAM', 'Gotas', 'Xarope', 'Externo', 'Epativan'] as const;
 
 export const ProductsTab: React.FC = () => {
@@ -131,13 +132,38 @@ export const ProductsTab: React.FC = () => {
     }
 
     produtosFiltrados.forEach((p) => {
-      const grupo = `${p.setor === 'semissolidos' ? 'Semissólidos — Linha ' : 'Líquidos — '}${p.linha}`;
+      let grupo: string;
+      if (p.linha === 'IMA' || p.maquina === 'IMA') {
+        grupo = 'Semissólidos — Máquina IMA';
+      } else {
+        grupo = `${p.setor === 'semissolidos' ? 'Semissólidos — Linha ' : 'Líquidos — '}${p.linha}`;
+      }
       if (!map.has(grupo)) {
         map.set(grupo, []);
       }
       map.get(grupo)!.push(p);
     });
-    return map;
+
+    // Ordenação canônica das seções para consistência visual
+    const ORDEM_SECOES = [
+      'Semissólidos — Linha NORDEN I / NORDEN II',
+      'Semissólidos — Linha NORDEN I',
+      'Semissólidos — Linha NORDEN III / NORDEN IV',
+      'Semissólidos — Máquina IMA',
+    ];
+
+    const sortedMap = new Map<string, Produto[]>();
+    const chaves = Array.from(map.keys()).sort((a, b) => {
+      const idxA = ORDEM_SECOES.indexOf(a);
+      const idxB = ORDEM_SECOES.indexOf(b);
+      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+      if (idxA !== -1) return -1;
+      if (idxB !== -1) return 1;
+      return a.localeCompare(b);
+    });
+
+    chaves.forEach((k) => sortedMap.set(k, map.get(k)!));
+    return sortedMap;
   }, [produtosFiltrados, linhaFiltro]);
 
   // Abre modal para novo produto
@@ -678,7 +704,7 @@ export const ProductsTab: React.FC = () => {
                 />
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {(setorForm === 'semissolidos'
-                    ? ['Norden I', 'Norden II', 'Norden III', 'Norden IV']
+                    ? ['Norden I', 'Norden II', 'Norden III', 'Norden IV', 'IMA']
                     : ['CAM', 'Gotas', 'Xarope', 'Externo', 'Epativan']
                   ).map((sug) => (
                     <button
