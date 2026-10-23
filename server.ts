@@ -314,14 +314,60 @@ async function startServer() {
     res.status(201).json(novoProduto);
   });
 
+  // Produtos: Listar todos
+  app.get('/api/produtos', (req: Request, res: Response) => {
+    res.json(store.produtos);
+  });
+
   // Produtos: Atualizar
   app.put('/api/produtos/:id', (req: Request, res: Response) => {
     const { id } = req.params;
-    const { codigo, nome, setor, linha, tempoEnvaseMinutos, vinculos, temposPorMaquina } = req.body;
-    const index = store.produtos.findIndex((p) => p.id === id);
+    const {
+      codigo,
+      nome,
+      setor,
+      linha,
+      maquina,
+      tempoEnvaseMinutos,
+      tempoMedioMinutos,
+      vinculos,
+      temposPorMaquina,
+    } = req.body;
+
+    let index = store.produtos.findIndex((p) => p.id === id);
+    if (index === -1 && codigo) {
+      index = store.produtos.findIndex((p) => p.codigo === String(codigo).trim());
+    }
+    if (index === -1 && nome) {
+      index = store.produtos.findIndex(
+        (p) => p.nome.toUpperCase().trim() === String(nome).toUpperCase().trim()
+      );
+    }
+
+    const tMinutos =
+      tempoEnvaseMinutos !== undefined
+        ? Number(tempoEnvaseMinutos)
+        : tempoMedioMinutos !== undefined
+        ? Number(tempoMedioMinutos)
+        : undefined;
 
     if (index === -1) {
-      return res.status(404).json({ error: 'Produto não encontrado' });
+      const novoProduto: Produto = {
+        id,
+        codigo: codigo ? String(codigo).trim() : `P${Date.now().toString().slice(-6)}`,
+        nome: String(nome || '').trim().toUpperCase(),
+        setor: setor || 'semissolidos',
+        linha: String(linha || '').trim(),
+        maquina: maquina || linha,
+        tempoEnvaseMinutos: tMinutos || 60,
+        tempoMedioMinutos: tMinutos || 60,
+        vinculos: vinculos || [],
+        temposPorMaquina: temposPorMaquina || {},
+      };
+      store.produtos.push(novoProduto);
+      salvarDados(store);
+      broadcast('produtos_updated', store.produtos);
+      return res.status(201).json(novoProduto);
     }
 
     store.produtos[index] = {
@@ -330,7 +376,8 @@ async function startServer() {
       ...(nome ? { nome: String(nome).trim().toUpperCase() } : {}),
       ...(setor ? { setor } : {}),
       ...(linha ? { linha: String(linha).trim() } : {}),
-      ...(tempoEnvaseMinutos !== undefined ? { tempoEnvaseMinutos: Number(tempoEnvaseMinutos) } : {}),
+      ...(maquina ? { maquina: String(maquina).trim() } : {}),
+      ...(tMinutos !== undefined ? { tempoEnvaseMinutos: tMinutos, tempoMedioMinutos: tMinutos } : {}),
       ...(vinculos !== undefined ? { vinculos } : {}),
       ...(temposPorMaquina !== undefined ? { temposPorMaquina } : {}),
     };

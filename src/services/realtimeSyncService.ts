@@ -33,7 +33,15 @@ function sanitizarParaFirestore(obj: Record<string, any>): Record<string, any> {
   for (const [k, v] of Object.entries(obj)) {
     if (v === undefined) {
       limpo[k] = null;
-    } else if (v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Date)) {
+    } else if (Array.isArray(v)) {
+      limpo[k] = v.map((item) =>
+        item && typeof item === 'object' && !(item instanceof Date)
+          ? sanitizarParaFirestore(item)
+          : item === undefined
+          ? null
+          : item
+      );
+    } else if (v && typeof v === 'object' && !(v instanceof Date)) {
       limpo[k] = sanitizarParaFirestore(v);
     } else {
       limpo[k] = v;
@@ -351,7 +359,13 @@ export function salvarProdutosLocais(produtos: Produto[]) {
 export async function salvarProdutoFirestore(produto: Produto): Promise<void> {
   try {
     const docRef = doc(db, PRODUTOS_COLLECTION, produto.id);
-    await setDoc(docRef, sanitizarParaFirestore(produto));
+    const tMin = Number(produto.tempoEnvaseMinutos || produto.tempoMedioMinutos) || 60;
+    const dados = sanitizarParaFirestore({
+      ...produto,
+      tempoEnvaseMinutos: tMin,
+      tempoMedioMinutos: tMin,
+    });
+    await setDoc(docRef, dados, { merge: true });
   } catch (err) {
     console.warn(`Falha ao gravar produto ${produto.id} no Firestore:`, err);
   }
@@ -370,55 +384,69 @@ export async function excluirProdutoFirestore(id: string): Promise<void> {
 }
 
 /**
- * Garante que os 22 produtos da máquina IMA estejam cadastrados na coleção 'produtos' do Firebase
- * com: código, nome, setor (Semissólidos), máquina (IMA), tempoMedioMinutos (2040).
+ * Sincroniza produtos iniciais no Firestore de forma NÃO destrutiva:
+ * Apenas cria documentos se eles ainda NÃO existirem no Firestore,
+ * JAMAIS sobrescrevendo alterações feitas pelo usuário.
  */
-export async function sincronizarCatalogoImaNoFirestore(): Promise<void> {
+export async function sincronizarCatalogoNoFirestore(idsExistentesNoFirestore: Set<string>): Promise<void> {
   try {
-    const promises = PRODUTOS_IMA.map((p) => {
+    const faltantes = PRODUTOS_INICIAIS.filter((p) => !idsExistentesNoFirestore.has(p.id));
+    if (faltantes.length === 0) return;
+
+    const promises = faltantes.map((p) => {
       const docRef = doc(db, PRODUTOS_COLLECTION, p.id);
+      const tMin = Number(p.tempoEnvaseMinutos || p.tempoMedioMinutos) || 60;
       return setDoc(
         docRef,
         sanitizarParaFirestore({
           id: p.id,
           codigo: p.codigo,
           nome: p.nome,
-          setor: 'semissolidos',
-          maquina: 'IMA',
-          linha: 'IMA',
-          tempoMedioMinutos: 2040,
-          tempoEnvaseMinutos: 2040,
-          vinculos: p.vinculos,
-          temposPorMaquina: p.temposPorMaquina,
+          setor: p.setor,
+          maquina: p.maquina || p.linha,
+          linha: p.linha,
+          tempoMedioMinutos: tMin,
+          tempoEnvaseMinutos: tMin,
+          vinculos: p.vinculos || [],
+          temposPorMaquina: p.temposPorMaquina || {},
         }),
         { merge: true }
       );
     });
     await Promise.allSettled(promises);
   } catch (err) {
-    console.warn('Erro ao sincronizar catálogo IMA no Firestore:', err);
+    console.warn('Erro ao sincronizar catálogo inicial no Firestore:', err);
   }
 }
 
 /**
- * Escuta produtos em tempo real no Firestore, mesclando com o catálogo de fábrica
+ * Compatibilidade legada com chamadas existentes
+ */
+export async function sincronizarCatalogoImaNoFirestore(): Promise<void> {
+  // Chamada não-destrutiva
+  return sincronizarCatalogoNoFirestore(new Set());
+}
+
+/**
+ * Escuta produtos em tempo real no Firestore, mesclando com o cache local e catálogo
  */
 export function ouvirProdutosEmTempoReal(
   onUpdate: (produtos: Produto[]) => void,
   onError?: (err: any) => void
 ): () => void {
-  // Dispara sincronização do catálogo IMA no Firestore em segundo plano
-  sincronizarCatalogoImaNoFirestore().catch(() => {});
-
   try {
     const colRef = collection(db, PRODUTOS_COLLECTION);
     return onSnapshot(
       colRef,
       (snapshot) => {
+        const idsNoFirestore = new Set<string>();
+        const listaFirestore: Produto[] = [];
+
         if (!snapshot.empty) {
-          const listaFirestore: Produto[] = [];
           snapshot.forEach((docSnap) => {
+            idsNoFirestore.add(docSnap.id);
             const d = docSnap.data();
+            const tMin = Number(d.tempoEnvaseMinutos || d.tempoMedioMinutos) || 60;
             listaFirestore.push({
               id: docSnap.id,
               codigo: d.codigo || `P${docSnap.id.slice(-6)}`,
@@ -426,23 +454,42 @@ export function ouvirProdutosEmTempoReal(
               setor: d.setor || 'semissolidos',
               linha: d.linha || d.maquina || 'NORDEN I',
               maquina: d.maquina || d.linha || 'NORDEN I',
-              tempoEnvaseMinutos: Number(d.tempoEnvaseMinutos || d.tempoMedioMinutos) || 60,
-              tempoMedioMinutos: Number(d.tempoMedioMinutos || d.tempoEnvaseMinutos) || 60,
+              tempoEnvaseMinutos: tMin,
+              tempoMedioMinutos: tMin,
               vinculos: Array.isArray(d.vinculos) ? d.vinculos : [],
               temposPorMaquina: d.temposPorMaquina || {},
             });
           });
-
-          const map = new Map<string, Produto>();
-          PRODUTOS_INICIAIS.forEach((p) => map.set(p.id, p));
-          listaFirestore.forEach((p) => map.set(p.id, p));
-
-          const merged = Array.from(map.values());
-          salvarProdutosLocais(merged);
-          onUpdate(merged);
-        } else {
-          onUpdate(obterProdutosLocais());
         }
+
+        // Se faltam produtos padrão no Firestore, cadastra apenas os faltantes sem sobrescrever
+        if (idsNoFirestore.size < PRODUTOS_INICIAIS.length) {
+          sincronizarCatalogoNoFirestore(idsNoFirestore).catch(() => {});
+        }
+
+        // Hierarquia de dados:
+        // 1. PRODUTOS_INICIAIS como base padrão
+        // 2. obterProdutosLocais() (cache do navegador com edições recentes salvas)
+        // 3. listaFirestore (documentos persistidos no Firestore)
+        const map = new Map<string, Produto>();
+        PRODUTOS_INICIAIS.forEach((p) => map.set(p.id, p));
+
+        const locais = obterProdutosLocais();
+        locais.forEach((p) => {
+          if (p && p.id) {
+            map.set(p.id, p);
+          }
+        });
+
+        listaFirestore.forEach((p) => {
+          if (p && p.id) {
+            map.set(p.id, p);
+          }
+        });
+
+        const merged = Array.from(map.values());
+        salvarProdutosLocais(merged);
+        onUpdate(merged);
       },
       (error) => {
         console.warn('Firestore Produtos onSnapshot erro (usando cache local):', error);

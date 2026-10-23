@@ -1106,9 +1106,11 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
 
     // 2. Toca som de sucesso e sincroniza no Firestore
     tocarSomSucesso();
-    salvarProdutoFirestore(novoProduto).catch((err) =>
-      console.warn('Erro ao salvar produto no Firestore:', err)
-    );
+    try {
+      await salvarProdutoFirestore(novoProduto);
+    } catch (err) {
+      console.warn('Erro ao salvar produto no Firestore:', err);
+    }
 
     // 3. Persistência na API local com fallback resiliente
     try {
@@ -1136,34 +1138,79 @@ export function ProductionProvider({ children }: { children: React.ReactNode }) 
   };
 
   const editarProduto = async (id: string, dados: Partial<Produto>) => {
-    let produtoAtualizado: Produto | undefined;
+    // Garante que tempoEnvaseMinutos e tempoMedioMinutos fiquem consistentes
+    const tMin =
+      dados.tempoEnvaseMinutos !== undefined
+        ? Number(dados.tempoEnvaseMinutos)
+        : dados.tempoMedioMinutos !== undefined
+        ? Number(dados.tempoMedioMinutos)
+        : undefined;
 
+    const dadosNormalizados: Partial<Produto> = {
+      ...dados,
+      ...(tMin !== undefined ? { tempoEnvaseMinutos: tMin, tempoMedioMinutos: tMin } : {}),
+    };
+
+    // 1. Obter produto existente de forma síncrona segura
+    const produtoAtual =
+      produtos.find((p) => p.id === id) ||
+      obterProdutosLocais().find((p) => p.id === id) ||
+      PRODUTOS_INICIAIS.find((p) => p.id === id);
+
+    const produtoCompleto: Produto = {
+      ...(produtoAtual || ({} as Produto)),
+      ...dadosNormalizados,
+      id,
+      nome: (dadosNormalizados.nome || produtoAtual?.nome || '').toUpperCase(),
+      setor: dadosNormalizados.setor || produtoAtual?.setor || 'semissolidos',
+      linha: dadosNormalizados.linha || produtoAtual?.linha || 'NORDEN I',
+      maquina: dadosNormalizados.maquina || produtoAtual?.maquina || dadosNormalizados.linha || produtoAtual?.linha || 'NORDEN I',
+      tempoEnvaseMinutos: tMin || produtoAtual?.tempoEnvaseMinutos || 60,
+      tempoMedioMinutos: tMin || produtoAtual?.tempoMedioMinutos || produtoAtual?.tempoEnvaseMinutos || 60,
+      vinculos: dadosNormalizados.vinculos || produtoAtual?.vinculos || [],
+      temposPorMaquina: dadosNormalizados.temposPorMaquina || produtoAtual?.temposPorMaquina || {},
+    };
+
+    // 2. Atualizar estado React e salvar no localStorage imediatamente
     setProdutos((prev) => {
       const lista = Array.isArray(prev) ? prev : [];
-      const atualizados = lista.map((p) => {
-        if (p.id === id) {
-          produtoAtualizado = { ...p, ...dados };
-          return produtoAtualizado;
-        }
-        return p;
-      });
+      const index = lista.findIndex((p) => p.id === id);
+      const atualizados =
+        index >= 0
+          ? lista.map((p) => (p.id === id ? produtoCompleto : p))
+          : [...lista, produtoCompleto];
       salvarProdutosLocais(atualizados);
       return atualizados;
     });
 
-    tocarSomSucesso();
-
-    if (produtoAtualizado) {
-      salvarProdutoFirestore(produtoAtualizado).catch((err) =>
-        console.warn('Erro ao atualizar produto no Firestore:', err)
-      );
+    // Salva diretamente no localStorage de forma síncrona
+    try {
+      const listaLocal = obterProdutosLocais();
+      const idxLocal = listaLocal.findIndex((p) => p.id === id);
+      const atualizadosLocal =
+        idxLocal >= 0
+          ? listaLocal.map((p) => (p.id === id ? produtoCompleto : p))
+          : [...listaLocal, produtoCompleto];
+      salvarProdutosLocais(atualizadosLocal);
+    } catch (e) {
+      console.warn('Erro ao salvar no cache local:', e);
     }
 
+    tocarSomSucesso();
+
+    // 3. Salvar no Firestore (aguardando confirmação da nuvem)
+    try {
+      await salvarProdutoFirestore(produtoCompleto);
+    } catch (err) {
+      console.warn('Erro ao atualizar produto no Firestore:', err);
+    }
+
+    // 4. Salvar na API local (server.ts / store.json)
     try {
       await fetch(`/api/produtos/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(dados),
+        body: JSON.stringify(produtoCompleto),
       });
     } catch (err) {
       console.warn('Atualização salva no Firestore e cache local (API em fallback):', err);

@@ -13,7 +13,7 @@ import {
   AlertCircle,
   Sparkles,
 } from 'lucide-react';
-import { Produto, Setor } from '../types';
+import { Produto, Setor, VinculoMaquinaTempo } from '../types';
 import { useProduction } from '../context/ProductionContext';
 import {
   formatarMinutosParaTexto,
@@ -191,9 +191,20 @@ export const ProductsTab: React.FC = () => {
     setCodigoForm(produto.codigo || '');
     setNomeForm(produto.nome);
     setSetorForm(produto.setor);
-    setLinhaForm(produto.linha);
-    setHorasForm(Math.floor((produto.tempoEnvaseMinutos || 60) / 60));
-    setMinutosForm((produto.tempoEnvaseMinutos || 60) % 60);
+
+    const linhaAlvo = linhaFiltro !== 'todas' ? linhaFiltro : produto.linha;
+    setLinhaForm(linhaAlvo);
+
+    const tempoAtual =
+      linhaFiltro !== 'todas'
+        ? (obterTempoProdutoParaMaquina(produto, { nome: linhaFiltro, linhaPadrao: linhaFiltro }) ||
+            produto.tempoEnvaseMinutos ||
+            produto.tempoMedioMinutos ||
+            60)
+        : (produto.tempoEnvaseMinutos || produto.tempoMedioMinutos || 60);
+
+    setHorasForm(Math.floor(tempoAtual / 60));
+    setMinutosForm(tempoAtual % 60);
     setErroForm(null);
     setModalAberto(true);
   };
@@ -227,35 +238,104 @@ export const ProductsTab: React.FC = () => {
     try {
       const codigoLimpo = codigoForm.trim();
       if (produtoEmEdicao) {
+        const novosTemposPorMaquina: Record<string, number> = {
+          ...(produtoEmEdicao.temposPorMaquina || {}),
+        };
+
+        const gerarChavesVariacoes = (nome: string) => [
+          nome,
+          nome.toLowerCase(),
+          nome.toUpperCase(),
+          nome.replace(/\s+/g, ''),
+          nome.replace(/\s+/g, '_').toLowerCase(),
+          nome.replace(/norden\s+([iv]+)/i, 'Norden $1'),
+          nome.replace(/norden\s+([1-4])/i, 'Norden $1'),
+        ];
+
+        gerarChavesVariacoes(linhaLimpa).forEach((k) => {
+          novosTemposPorMaquina[k] = tempoTotalMinutos;
+        });
+
+        const ehIma =
+          linhaLimpa.toUpperCase() === 'IMA' ||
+          produtoEmEdicao.linha?.toUpperCase() === 'IMA' ||
+          produtoEmEdicao.maquina?.toUpperCase() === 'IMA';
+
+        if (ehIma) {
+          novosTemposPorMaquina['IMA'] = tempoTotalMinutos;
+          novosTemposPorMaquina['ima'] = tempoTotalMinutos;
+          novosTemposPorMaquina['m-semi-ima'] = tempoTotalMinutos;
+        }
+
+        const vinculosAtuais = produtoEmEdicao.vinculos || [];
+        let novosVinculos: VinculoMaquinaTempo[];
+
+        if (ehIma || vinculosAtuais.length <= 1) {
+          novosVinculos = [{ linhaOuMaquina: linhaLimpa, tempoEnvaseMinutos: tempoTotalMinutos }];
+          for (const k of Object.keys(novosTemposPorMaquina)) {
+            novosTemposPorMaquina[k] = tempoTotalMinutos;
+          }
+        } else {
+          let atualizouVinculo = false;
+          novosVinculos = vinculosAtuais.map((v) => {
+            const vLimpo = v.linhaOuMaquina.toLowerCase().trim();
+            const lLimpo = linhaLimpa.toLowerCase().trim();
+            if (vLimpo === lLimpo || vLimpo.includes(lLimpo) || lLimpo.includes(vLimpo)) {
+              atualizouVinculo = true;
+              gerarChavesVariacoes(v.linhaOuMaquina).forEach((k) => {
+                novosTemposPorMaquina[k] = tempoTotalMinutos;
+              });
+              return { ...v, tempoEnvaseMinutos: tempoTotalMinutos };
+            }
+            return v;
+          });
+
+          if (!atualizouVinculo) {
+            novosVinculos = vinculosAtuais.map((v) => {
+              gerarChavesVariacoes(v.linhaOuMaquina).forEach((k) => {
+                novosTemposPorMaquina[k] = tempoTotalMinutos;
+              });
+              return { ...v, tempoEnvaseMinutos: tempoTotalMinutos };
+            });
+          }
+        }
+
         await editarProduto(produtoEmEdicao.id, {
+          id: produtoEmEdicao.id,
           codigo: codigoLimpo || produtoEmEdicao.codigo || `P${Date.now().toString().slice(-6)}`,
           nome: nomeLimpo.toUpperCase(),
           setor: setorForm,
           linha: linhaLimpa,
+          maquina: ehIma ? 'IMA' : (produtoEmEdicao.maquina || linhaLimpa),
           tempoEnvaseMinutos: tempoTotalMinutos,
-          vinculos: [
-            { linhaOuMaquina: linhaLimpa, tempoEnvaseMinutos: tempoTotalMinutos },
-            ...(produtoEmEdicao.vinculos || []).filter(
-              (v) => v.linhaOuMaquina.toLowerCase() !== linhaLimpa.toLowerCase()
-            ),
-          ],
-          temposPorMaquina: {
-            ...(produtoEmEdicao.temposPorMaquina || {}),
-            [linhaLimpa]: tempoTotalMinutos,
-          },
+          tempoMedioMinutos: tempoTotalMinutos,
+          vinculos: novosVinculos,
+          temposPorMaquina: novosTemposPorMaquina,
         });
-        setSucessoMsg(`Produto "${nomeLimpo.toUpperCase()}" atualizado com sucesso!`);
+
+        setSucessoMsg(
+          `Produto "${nomeLimpo.toUpperCase()}" atualizado com sucesso (${formatarMinutosParaTexto(tempoTotalMinutos)})!`
+        );
       } else {
+        const novosTemposPorMaquina: Record<string, number> = { [linhaLimpa]: tempoTotalMinutos };
+        if (linhaLimpa.toUpperCase() === 'IMA') {
+          novosTemposPorMaquina['IMA'] = tempoTotalMinutos;
+          novosTemposPorMaquina['ima'] = tempoTotalMinutos;
+          novosTemposPorMaquina['m-semi-ima'] = tempoTotalMinutos;
+        }
+
         await adicionarProduto({
           codigo: codigoLimpo || `P${Date.now().toString().slice(-6)}`,
           nome: nomeLimpo.toUpperCase(),
           setor: setorForm,
           linha: linhaLimpa,
+          maquina: linhaLimpa === 'IMA' ? 'IMA' : linhaLimpa,
           tempoEnvaseMinutos: tempoTotalMinutos,
+          tempoMedioMinutos: tempoTotalMinutos,
           vinculos: [{ linhaOuMaquina: linhaLimpa, tempoEnvaseMinutos: tempoTotalMinutos }],
-          temposPorMaquina: { [linhaLimpa]: tempoTotalMinutos },
+          temposPorMaquina: novosTemposPorMaquina,
         });
-        setSucessoMsg(`Produto "${nomeLimpo.toUpperCase()}" cadastrado com sucesso!`);
+        setSucessoMsg(`Produto "${nomeLimpo.toUpperCase()}" cadastrado com sucesso (${formatarMinutosParaTexto(tempoTotalMinutos)})!`);
       }
 
       // Fecha o modal e limpa o formulário
